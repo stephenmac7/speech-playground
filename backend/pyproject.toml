@@ -1,0 +1,37 @@
+[project]
+name = "speech-playground-backend"
+version = "0.1.0"
+description = "Backend for Speech Playground"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.119",
+    "numpy>=2.3.4",
+    "tgt>=1.5",
+    "soundfile>=0.13.1",
+    "torch>=2.8,<2.9",
+    "torchaudio>=2.8,<2.9",
+    "matplotlib>=3.10.7",
+    "scikit-learn>=1.7.2",
+    "dtaidistance>=2.3.13",
+    "joblib>=1.5.2",
+    "torchcodec==0.7",
+]
+
+[project.optional-dependencies]
+ifmdd = [
+    "speechbrain",
+    "huggingface_hub<1.0",
+    "requests",
+    "transformers",
+    "flashlight-text",
+]
+kanade = [
+    "einops",
+    "jsonargparse[signatures]",
+    "safetensors",
+    "vocos",
+    # flash-attn needs to be installed separately -- see README.md
+]
+dpdp = ["numba"]
+sylber = ["sylber", "traitlets"]

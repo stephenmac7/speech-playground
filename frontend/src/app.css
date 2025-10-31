@@ -1,0 +1,24 @@
+:root {
+	--background-color: #f8f9fa;
+	--foreground-color: #212529;
+	--primary-color: #007bff;
+	--secondary-color: #6c757d;
+	--surface-color: #ffffff;
+	--border-color: #dee2e6;
+	--font-family-sans-serif: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
+		'Liberation Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+		'Noto Color Emoji';
+	--font-family-monospace: SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+		monospace;
+}
+
+body {
+	background-color: var(--background-color);
+	color: var(--foreground-color);
+	font-family: var(--font-family-sans-serif);
+	margin: 0;
+}
+
+.waiting {
+	cursor: wait !important;
+}

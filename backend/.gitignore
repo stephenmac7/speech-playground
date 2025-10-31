@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Different packages for different machines
+uv.lock
+
+# This is a library
+.python-version
+
+# Temporary
+kanade_tokenizer
+pretrained_models/
+exp_l2arctic/
