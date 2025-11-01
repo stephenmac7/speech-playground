@@ -17,60 +17,66 @@ export function labelSpan(text: string): HTMLElement {
 }
 
 export function buildContinuousRegions(
-	allScores: number[],
-	frameDur: number,
-	trigger: number,
-	min: number,
-	discretize: boolean
+    allScores: number[],
+    frameDur: number,
+    trigger: number,
+    min: number
 ): Region[] {
-	if (allScores.length === 0) return [];
+    if (allScores.length === 0) return [];
 
-	const regions: Region[] = [];
-	let current: { start: number; scores: number[] } | undefined;
+    const regions: Region[] = [];
+    let current: { start: number; scores: number[] } | undefined;
 
-	allScores.forEach((score, i) => {
-		if (score < trigger) {
-			if (!current) {
-				for (let j = i - 1; j >= 0; j--) {
-					if (allScores[j] >= trigger) {
-						current = { start: j + 1, scores: allScores.slice(j + 1, i) };
-						break;
-					}
-				}
-				current ??= { start: 0, scores: [] };
-			}
-			current.scores.push(score);
-		} else if (score < min) {
-			current?.scores.push(score);
-		} else if (current) {
-			if (current.scores.length * frameDur >= 0.1) {
-				const avg = current.scores.reduce((a, b) => a + b, 0) / current.scores.length;
-				const shade = ((min - avg) / Math.abs(min)) * (discretize ? 1 : 2.0);
-				const opacity = Math.max(0, Math.min(1, shade)) * 0.8;
-				regions.push({
-					start: current.start * frameDur,
-					end: i * frameDur,
-					color: `rgba(255, 0, 0, ${opacity})`,
-					content: labelSpan(avg.toFixed(2))
-				});
-			}
-			current = undefined;
-		}
-	});
+    const createRegion = (startFrame: number, endFrame: number, scores: number[]) => {
+        const duration = scores.length * frameDur;
+        if (duration < 0.1) return; // Ignore very short regions
 
-	if (current) {
-		const avg = current.scores.reduce((a, b) => a + b, 0) / current.scores.length;
-		const shade = ((min - avg) / Math.abs(min)) * (discretize ? 1 : 2.0);
-		const opacity = Math.max(0, Math.min(1, shade)) * 0.8;
-		regions.push({
-			start: current.start * frameDur,
-			end: allScores.length * frameDur,
-			color: `rgba(255, 0, 0, ${opacity})`,
-			content: labelSpan(avg.toFixed(2))
-		});
-	}
+        const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+        
+        // Calculate shade: 
+        // (min - avg) is the "badness" amount.
+        // Divide by min to normalize it (0 -> 1 range, where 1 is worst (avg=0))
+        // Multiply by 2.0 to amplify the effect (so even "half-bad" is fully opaque)
+        // Clamp between 0 and 1, then apply 80% max opacity.
+        const shade = ((min - avg) / min) * 2.0;
+        const opacity = Math.max(0, Math.min(1, shade)) * 0.8;
 
-	return regions;
+        regions.push({
+            start: startFrame * frameDur,
+            end: endFrame * frameDur,
+            color: `rgba(255, 0, 0, ${opacity})`,
+            content: labelSpan(avg.toFixed(2))
+        });
+    };
+
+    allScores.forEach((score, i) => {
+        if (score < trigger) {
+            if (!current) {
+                // Start of a new region, backtrack to find the real start
+                let j = i - 1;
+                while (j >= 0 && allScores[j] < trigger) {
+                    j--;
+                }
+                // The last "good" frame was j, so the "bad" region started at j + 1
+                current = { start: j + 1, scores: allScores.slice(j + 1, i) };
+            }
+            current.scores.push(score);
+        } else if (score < min) {
+            // Continue the region if it's below min but not below trigger
+            current?.scores.push(score);
+        } else if (current) {
+            // End of the current region (score is >= min)
+            createRegion(current.start, i, current.scores);
+            current = undefined;
+        }
+    });
+
+    // Handle a region that might be open at the end
+    if (current) {
+        createRegion(current.start, allScores.length, current.scores);
+    }
+
+    return regions;
 }
 
 export function buildSyllableRegions(result: SylberResult): Region[] {
