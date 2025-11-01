@@ -242,14 +242,14 @@ def compare_endpoint(
             xcodes, xboundaries = get_dpdp_tokenizer(encoder).tokenize_one(x, gamma=gamma)
             ycodes, yboundaries = get_dpdp_tokenizer(encoder).tokenize_one(y, gamma=gamma)
 
-            y_mismatches = find_mismatches(ycodes, xcodes)
+            y_mismatches = find_mismatches(ycodes, xcodes, normalize=True)
             y_positions = np.zeros(len(y))
             for i in range(len(y_mismatches)):
                 l, r = yboundaries[i], yboundaries[i + 1]
                 y_positions[l:r] = y_mismatches[i] / (r - l)
         else:
             xtokens, ytokens = normal_tokens()
-            y_positions = find_mismatches(ytokens, xtokens)
+            y_positions = find_mismatches(ytokens, xtokens, normalize=True)
     else:
         cosine_sims = cosine_similarity(x, y)
         path = dtw_ndim.warping_path(x, y)
@@ -270,9 +270,9 @@ def compare_endpoint(
         plt.xlabel("Y Segments")
         plt.ylabel("X Segments")
         # Overlay the DTW path: x-axis is columns (j -> Y segments), y-axis is rows (i -> X segments)
-        plt.plot([j for i, j in path], [i for i, j in path], color="red", linewidth=1)
-        plt.savefig("/tmp/cosine_similarity.png")
-        plt.close()
+        # plt.plot([j for i, j in path], [i for i, j in path], color="red", linewidth=1)
+        # plt.savefig("/tmp/cosine_similarity.png")
+        # plt.close()
 
     # Plot for debugging
     # plot_waveform(ywav, sr, agreement_scores=y_positions)

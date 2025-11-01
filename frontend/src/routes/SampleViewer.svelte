@@ -2,7 +2,7 @@
 	import WaveSurfer from 'wavesurfer.js';
 	import ZoomPlugin from 'wavesurfer.js/dist/plugins/zoom.js';
 	import RegionsPlugin, { type RegionParams } from 'wavesurfer.js/dist/plugins/regions.js';
-	
+
 	let { audio, regions = [], clickableRegions = true, zoom = true, layout = 'default' } = $props();
 
 	let node: HTMLElement;
@@ -19,15 +19,15 @@
 		if (!audio) return;
 		let plugins = [];
 		if (zoom) plugins.push(ZoomPlugin.create({}));
-		let regionsPlugin : RegionsPlugin | undefined;
+		let regionsPlugin: RegionsPlugin | undefined;
 		if (regions.length > 0) {
 			regionsPlugin = RegionsPlugin.create();
 			plugins.push(regionsPlugin);
 		}
 		wavesurfer = WaveSurfer.create({
-		  container: node,
-		  waveColor: '#4F4A85',
-		  progressColor: '#383351',
+			container: node,
+			waveColor: '#4F4A85',
+			progressColor: '#383351',
 			barWidth: 2,
 			cursorWidth: 2,
 			height: height,
@@ -35,13 +35,13 @@
 			dragToSeek: true,
 			backend: 'WebAudio',
 			hideScrollbar: !zoom,
-			plugins: plugins,
+			plugins: plugins
 		});
-		wavesurfer.on('timeupdate', (t) => time = t);
+		wavesurfer.on('timeupdate', (t) => (time = t));
 		wavesurfer.on('interaction', () => wavesurfer.play());
-		wavesurfer.on('play', () => playing = true);
-		wavesurfer.on('pause', () => playing = false);
-		wavesurfer.on('decode', () => duration = wavesurfer.getDuration());
+		wavesurfer.on('play', () => (playing = true));
+		wavesurfer.on('pause', () => (playing = false));
+		wavesurfer.on('decode', () => (duration = wavesurfer.getDuration()));
 
 		let cancelled = false;
 
@@ -52,12 +52,17 @@
 					region.play(true);
 				});
 			}
-			regionsPlugin["avoidOverlapping"] = () => null;
+			regionsPlugin['avoidOverlapping'] = () => null;
 			(async () => {
 				await wavesurfer.loadBlob(audio);
 				if (cancelled) return;
-				regions.forEach((region : RegionParams) => {
-					regionsPlugin.addRegion({drag: false, resize: false, color: 'rgba(255,255,197,0.2)', ...region});
+				regions.forEach((region: RegionParams) => {
+					regionsPlugin.addRegion({
+						drag: false,
+						resize: false,
+						color: 'rgba(255,255,197,0.2)',
+						...region
+					});
 				});
 			})();
 		} else {
@@ -73,7 +78,7 @@
 				plugin.destroy();
 			}
 		};
-	})
+	});
 
 	function format(time: number) {
 		if (isNaN(time)) return '...';
