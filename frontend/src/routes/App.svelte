@@ -24,7 +24,7 @@
 			<h1>Speech Playground</h1>
 			<nav class="tool-selection">
 				<span>Tools:</span>
-				{#each toolOptions as option}
+				{#each toolOptions as option (option.id)}
 					<label>
 						<input type="checkbox" bind:group={tools} value={option.id} />
 						{option.label}

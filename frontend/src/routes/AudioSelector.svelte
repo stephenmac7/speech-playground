@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { PUBLIC_DATA_PREFIX, PUBLIC_EXAMPLE_PATH } from '$env/static/public';
+	import { PUBLIC_DATA_PREFIX } from '$env/static/public';
+	import { getBlob, postBlob } from '$lib/api';
 
-    let { recorder, value = $bindable() } = $props();
+	let { recorder, value = $bindable() } = $props();
 
 	let isRecording = $state(false);
 
@@ -9,7 +10,7 @@
 
 	let apiServerFilePath = $state<string | Error>('');
 	let serverFilePath = $state('');
-    let serverAudio = $state<Blob | undefined>();
+	let serverAudio = $state<Blob | undefined>();
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -19,41 +20,31 @@
 				return;
 			}
 
-			const response = await fetch(`/api/data/${apiServerFilePath}`, {
-				signal: controller.signal
-			});
-            if (response.ok) {
-                serverAudio = await response.blob();
-                value = serverAudio;
-            } else {
-                console.error(`Error fetching server audio: ${response.statusText}`);
-            }
+			try {
+				serverAudio = await getBlob(`/api/data/${apiServerFilePath}`, controller.signal);
+				value = serverAudio;
+			} catch (e: unknown) {
+				if ((e as { name?: string })?.name !== 'AbortError') {
+					console.error(`Error fetching server audio:`, e);
+				}
+			}
 		})();
 
 		return () => controller.abort();
 	});
 
-	async function handleProcessAudio(blob : Blob, apply_vad : boolean) {
+	async function handleProcessAudio(blob: Blob, apply_vad: boolean) {
 		processingAudio = true;
 
 		const formData = new FormData();
 		formData.append('file', blob, 'recording.wav');
 		formData.append('apply_vad', String(apply_vad));
 
-		const response = await fetch('/api/process_audio', {
-			method: 'POST',
-			body: formData,
-		});
-
-		if (response.ok) {
-			value = await response.blob();
-		} else {
-			try {
-				const errorResult = await response.json();
-				console.error('Error processing audio:', errorResult.detail);
-			} catch (e) {
-				console.error('Error processing audio:', e);
-			}
+		try {
+			const blob = await postBlob('/api/process_audio', formData);
+			value = blob;
+		} catch (e: unknown) {
+			console.error('Error processing audio:', e);
 		}
 		processingAudio = false;
 	}
@@ -61,12 +52,12 @@
 	function toggleRecording() {
 		if (isRecording) {
 			recorder.stopRecording().then((blob: Blob) => {
-                handleProcessAudio(blob, true);
-                isRecording = false;
-            });
+				handleProcessAudio(blob, true);
+				isRecording = false;
+			});
 		} else {
 			recorder.startRecording();
-            isRecording = true;
+			isRecording = true;
 		}
 	}
 
@@ -74,23 +65,23 @@
 		const target = e.target as HTMLInputElement;
 		const file = target.files?.[0];
 		if (file) {
-            if (isRecording) {
-                recorder.cancelRecording();
-                isRecording = false;
-            }
+			if (isRecording) {
+				recorder.cancelRecording();
+				isRecording = false;
+			}
 			handleProcessAudio(file, false);
-		};
+		}
 		target.value = '';
 	}
 
 	function setServerFilePath() {
 		if (serverFilePath.startsWith(PUBLIC_DATA_PREFIX)) {
 			const nextValue = serverFilePath.substring(PUBLIC_DATA_PREFIX.length);
-            if (nextValue == apiServerFilePath) {
-                value = serverAudio; // just set the audio to the existing server audio
-            } else {
-                apiServerFilePath = nextValue; // will trigger fetch
-            }
+			if (nextValue == apiServerFilePath) {
+				value = serverAudio; // just set the audio to the existing server audio
+			} else {
+				apiServerFilePath = nextValue; // will trigger fetch
+			}
 		} else {
 			apiServerFilePath = Error(`File must be in ${PUBLIC_DATA_PREFIX}`);
 		}

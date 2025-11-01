@@ -18,7 +18,7 @@ def compute_match_grid(x, y, *, gap_penalty, match_score, mismatch_score):
             )
     return grid
 
-def find_mismatches(x, y, *, gap_penalty=-1, match_score=1, mismatch_score=-1):
+def find_mismatches(x, y, *, gap_penalty=-1, match_score=1, mismatch_score=-1, normalize=False):
     """
     Performs a global alignment and distributes penalties for insertions in x
     to the surrounding tokens.
@@ -67,6 +67,26 @@ def find_mismatches(x, y, *, gap_penalty=-1, match_score=1, mismatch_score=-1):
         # Penalize the token *after* the gap
         if loc < len(x):
             x_penalties[loc] += penalty_share
+
+    if normalize:
+        max_val = match_score
+        # The worst score is a primary penalty (mismatch or gap)
+        # plus two shared penalties from insertions on both sides.
+        min_val = min(mismatch_score, gap_penalty) + gap_penalty
+        
+        score_range = max_val - min_val
+        
+        assert score_range >= 0, "Invalid score range for normalization."
+        normalized_scores = (x_penalties - min_val) / score_range
+        
+        if not (np.all(normalized_scores >= -1e-9) and np.all(normalized_scores <= 1.0 + 1e-9)):
+            raise RuntimeError(
+                "Normalization failed. Scores outside [0, 1] range detected. "
+                f"Min score: {np.min(normalized_scores)}, "
+                f"Max score: {np.max(normalized_scores)}"
+            )
+
+        return normalized_scores
             
     return x_penalties
 

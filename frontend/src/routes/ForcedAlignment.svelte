@@ -1,18 +1,24 @@
 <script lang="ts">
 	import { PUBLIC_EXAMPLE_TRANSCRIPT } from '$env/static/public';
 	import SampleViewer from './SampleViewer.svelte';
+	import { postJson } from '$lib/api';
 
 	let { tracks, active } = $props();
 
-    let audio = $state(tracks['Audio']);
-    $effect(() => {
-        if (active) audio = tracks['Audio'];
-    });
+	let audio = $state(tracks['Audio']);
+	$effect(() => {
+		if (active) audio = tracks['Audio'];
+	});
 
 	let transcript = $state(PUBLIC_EXAMPLE_TRANSCRIPT);
-	let alignment : Record<string, any> = $state({});
+	type Alignment = Record<string, unknown>;
+	let alignment: Alignment = $state({});
 	let mode = $state('phones');
-	let regions = $derived(mode === 'none' ? [] : alignment[mode] || []);
+	let regions = $derived(() => {
+		if (mode === 'none') return [];
+		const val = alignment[mode];
+		return Array.isArray(val) ? val : [];
+	});
 
 	let gettingIntervals = $state(false);
 
@@ -29,20 +35,10 @@
 			formData.append('audio', audio, 'recording.wav');
 			formData.append('transcript', transcript);
 			try {
-				const intervals_resp = await fetch(`/api/align`, {
-					method: 'POST',
-					body: formData,
-					signal: controller.signal,
-				});
-				const result = await intervals_resp.json();
-				if (intervals_resp.ok) {
-					alignment = result;
-				} else {
-					console.error(`Error fetching intervals: ${result['detail']}`);
-					alignment = {};
-				}
-			} catch (e : any) {
-				if (e.name !== 'AbortError') {
+				const result = await postJson<Alignment>('/api/align', formData, controller.signal);
+				alignment = result;
+			} catch (e: unknown) {
+				if ((e as { name?: string })?.name !== 'AbortError') {
 					console.error('Error fetching intervals:', e);
 					alignment = {};
 				}
@@ -60,10 +56,11 @@
 </div>
 
 <div class="controls">
-	{#each ['phones', 'words', 'none'] as m}
+	{#each ['phones', 'words', 'none'] as m (m)}
 		<label>
 			<input type="radio" name="mode" value={m} bind:group={mode} />
-			{m.charAt(0).toUpperCase() + m.slice(1)} <!-- Capitalize properly -->
+			{m.charAt(0).toUpperCase() + m.slice(1)}
+			<!-- Capitalize properly -->
 		</label>
 	{/each}
 

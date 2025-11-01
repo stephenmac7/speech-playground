@@ -100,7 +100,7 @@
 <WavesurferRecorder bind:this={recorder} />
 
 <div class="requested-tracks">
-	{#each requestedTracks as key, i}
+	{#each requestedTracks as key (key)}
 		<button
 			class="requested-track-button"
 			class:selected={selectedTrackRequestKey === key}
@@ -126,16 +126,12 @@
 		>
 			{#if track.keys?.length}
 				<div class="track-assignments">
-					{#each track.keys.filter((k) => requestedTracks.includes(k)) as key}
+					{#each track.keys.filter((k) => requestedTracks.includes(k)) as key (key)}
 						<div class="track-assignment" style:--selection-color={colorOfString(key)}></div>
 					{/each}
 				</div>
 			{/if}
-			<button
-				class="delete-track"
-				onclick={() => deleteTrack(track.id)}
-				title="Delete track"
-			>
+			<button class="delete-track" onclick={() => deleteTrack(track.id)} title="Delete track">
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="24"
@@ -154,10 +150,7 @@
 			<SampleViewer audio={track.data} zoom={false} layout="compact" />
 			<AudioSelector
 				{recorder}
-				bind:value={
-					() => track.data,
-					(blob) => updateTrack(track.id, blob)
-				}
+				bind:value={() => track.data, (blob) => updateTrack(track.id, blob)}
 			/>
 		</fieldset>
 	{/each}
@@ -198,6 +191,7 @@
 		box-sizing: border-box;
 		overflow-y: auto;
 		scrollbar-width: none;
+		max-height: 80em;
 	}
 	.audio-library::-webkit-scrollbar {
 		display: none;
