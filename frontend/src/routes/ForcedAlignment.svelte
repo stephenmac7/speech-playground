@@ -14,7 +14,7 @@
 	type Alignment = Record<string, unknown>;
 	let alignment: Alignment = $state({});
 	let mode = $state('phones');
-	let regions = $derived(() => {
+	let regions = $derived.by(() => {
 		if (mode === 'none') return [];
 		const val = alignment[mode];
 		return Array.isArray(val) ? val : [];
