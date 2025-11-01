@@ -13,10 +13,13 @@
 	});
 
 	let convertVoice = $state(false);
+	let reconstructModel = $state(false);
 	let voiceConversionModel = $state('kanade-25hz');
 	let convertedAudio = $state<Blob | undefined>();
+	let reconstructedAudio = $state<Blob | undefined>();
 	$effect(() => {
 		if (!convertVoice) convertedAudio = undefined;
+		if (!reconstructModel) reconstructedAudio = undefined;
 	});
 
 	let comparisonMode = $state<'continuous' | 'syllable'>('continuous');
@@ -163,12 +166,15 @@
 	let audioForComparison = $derived(
 		convertVoice && encoder !== voiceConversionModel ? convertedAudio : audio
 	);
+	let modelForComparison = $derived(
+		reconstructModel ? reconstructedAudio : modelAudio
+	);
 
 	$effect(() => {
 		const controller = new AbortController();
 
 		(async () => {
-			if (!audioForComparison || !modelAudio) {
+			if (!audioForComparison || !modelForComparison) {
 				return;
 			}
 
@@ -178,7 +184,7 @@
 
 			const formData = new FormData();
 			formData.append('file', audioForComparison, 'recording.wav');
-			formData.append('model_file', modelAudio, 'model.wav');
+			formData.append('model_file', modelForComparison, 'model.wav');
 
 			if (comparisonMode === 'continuous') {
 				formData.append('encoder', encoder);
@@ -257,7 +263,39 @@
 				}
 			} catch (e: any) {
 				if (e.name !== 'AbortError') {
-					console.error('Error fetching scores:', e);
+					console.error('Error fetching converted voice:', e);
+				}
+			}
+		})();
+
+		return () => controller.abort();
+	});
+
+	$effect(() => {
+		const controller = new AbortController();
+
+		(async () => {
+			if (!modelAudio || !reconstructModel) {
+				return;
+			}
+
+			const formData = new FormData();
+			formData.append('file', modelAudio, 'recording.wav');
+			formData.append('model', voiceConversionModel);
+			try {
+				const response = await fetch(`/api/reconstruct`, {
+					method: 'POST',
+					body: formData,
+					signal: controller.signal
+				});
+				if (response.ok) {
+					reconstructedAudio = await response.blob();
+				} else {
+					console.error(`Error fetching reconstructed voice: ${response.statusText}`);
+				}
+			} catch (e: any) {
+				if (e.name !== 'AbortError') {
+					console.error('Error fetching reconstructed voice:', e);
 				}
 			}
 		})();
@@ -268,7 +306,7 @@
 
 <div class={loading ? 'waiting' : ''}>
 	<div class="viewer-card">
-		<SampleViewer audio={modelAudio} regions={modelRegions} />
+		<SampleViewer audio={reconstructModel ? reconstructedAudio : modelAudio} regions={modelRegions} />
 	</div>
 	<div class="viewer-card">
 		<SampleViewer audio={convertVoice ? convertedAudio : audio} regions={userRegions} />
@@ -327,7 +365,8 @@
 		<fieldset>
 			<legend>Voice Conversion</legend>
 			<label> Enabled: <input type="checkbox" bind:checked={convertVoice} /> </label>
-			<label class:disabled={!convertVoice}>
+			<label> Reconstruct Model: <input type="checkbox" bind:checked={reconstructModel} /> </label>
+			<label>
 				Model:
 				<select bind:value={voiceConversionModel}>
 					<option value="kanade-12hz">Kanade 12.5 Hz</option>
