@@ -152,7 +152,7 @@ def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_path: 
     if debug_save_path is not None:
         torchaudio.save(debug_save_path, ywav, sr)
 
-    max_abs = ywav.abs().max()
+    max_abs = ywav.abs().max() + 1e-8
     if max_abs > 0:
         ywav = ywav / max_abs
 
@@ -353,6 +353,30 @@ def convert_voice_endpoint(
     converted_waveform = vocode(vocoder, mel_spectrogram.unsqueeze(0))
 
     return streaming_response_of_audio(converted_waveform, kanade.sample_rate)
+
+@app.post("/reconstruct")
+def reconstruct_endpoint(
+    file: UploadFile = File(...),
+    model : Literal["kanade-12hz", "kanade-25hz"] = Form(...),
+):
+    from kanade_tokenizer.util import vocode
+
+    kanade = get_kanade(model)
+    source_wav, source_sr = torchaudio.load_with_torchcodec(file.file)
+    source_wav = source_wav.squeeze(0)
+    source_wav_resampled = F.resample(source_wav, source_sr, kanade.sample_rate).to(kanade.device)
+
+    features = kanade.encode_one(source_wav_resampled)
+
+    mel_spectrogram = kanade.model.decode(
+        content_embedding=features.content_embedding,
+        global_embedding=features.global_embedding,
+        target_audio_length=len(source_wav_resampled),
+    )
+    vocoder = get_kanade_vocoder(model)
+    reconstructed_waveform = vocode(vocoder, mel_spectrogram.unsqueeze(0))
+
+    return streaming_response_of_audio(reconstructed_waveform, kanade.sample_rate)
 
 
 # @app.post("/transfer_intervals/{tier}")
