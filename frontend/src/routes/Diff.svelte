@@ -74,7 +74,7 @@
 
 	const userRegions = $derived.by(() => {
 		if (comparisonMode === 'fixedRate') {
-			return buildContinuousRegions(scores, frameDuration, trigger, trigger - 0.05, discretize);
+			return buildContinuousRegions(scores, frameDuration, trigger, trigger - 0.05);
 		}
 		return sylberResult ? buildSyllableRegions(sylberResult) : ([] as Region[]);
 	});
