@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def compute_match_grid(x, y, *, gap_penalty, match_score, mismatch_score):
-    grid = np.zeros((len(x)+1, len(y)+1), dtype=x.dtype)
-    grid[0, 1:] = np.arange(1, len(y)+1) * gap_penalty
+    grid = np.zeros((len(x)+1, len(y)+1))
+    # no penalty for starting in the middle of y
     grid[1:, 0] = np.arange(1, len(x)+1) * gap_penalty
     for i in range(1, len(x)+1):
         for j in range(1, len(y)+1):
@@ -19,10 +19,8 @@ def compute_match_grid(x, y, *, gap_penalty, match_score, mismatch_score):
     return grid
 
 def find_mismatches(x, y, *, gap_penalty=-1, match_score=1, mismatch_score=-1, normalize=False):
-    """
-    Performs a global alignment and distributes penalties for insertions in x
-    to the surrounding tokens.
-    """
+    # x = learner, y = reference
+
     # Step 1: Compute the alignment score grid
     grid = compute_match_grid(
         x, y,
@@ -31,52 +29,39 @@ def find_mismatches(x, y, *, gap_penalty=-1, match_score=1, mismatch_score=-1, n
         mismatch_score=mismatch_score
     )
 
-    # Step 2: Backtrack, calculate primary penalties, and record insertion locations
+    # Step 2: Backtrack, calculate primary penalties, and record omissions
     x_penalties = np.zeros(len(x))
-    insertion_locations = []
-    i, j = len(x), len(y)
+    omission_locations = []
+
+    i = len(x)
+    j = np.argmax(grid[i, :])  # Start at the max in the last row
 
     while i > 0 and j > 0:
         current_match_score = match_score if x[i - 1] == y[j - 1] else mismatch_score
 
-        if grid[i, j] == grid[i - 1, j - 1] + current_match_score:
+        if np.isclose(grid[i, j], grid[i - 1, j - 1] + current_match_score):
             x_penalties[i - 1] = current_match_score
             i -= 1
             j -= 1
-        elif grid[i, j] == grid[i - 1, j] + gap_penalty:
+        elif np.isclose(grid[i, j], grid[i - 1, j] + gap_penalty):
             x_penalties[i - 1] = gap_penalty
             i -= 1
-        else: # This is a horizontal move (insertion in x)
-            # Record the grid index 'i' where the insertion occurs.
-            # This is the position *after* the token x[i-1].
-            insertion_locations.append(i)
+        else:
+            # This is an omission. Record the 'x' index *before* the gap.
+            omission_locations.append(i)
             j -= 1
 
     while i > 0:
         x_penalties[i - 1] = gap_penalty
         i -= 1
-    
-    # Step 3: Distribute penalties for the recorded insertions
-    # We split the penalty because it affects the timing on both sides of the gap.
-    penalty_share = gap_penalty / 2.0
-    for loc in insertion_locations:
-        # Penalize the token *before* the gap
-        if loc > 0:
-            x_penalties[loc - 1] += penalty_share
-        
-        # Penalize the token *after* the gap
-        if loc < len(x):
-            x_penalties[loc] += penalty_share
 
     if normalize:
         max_val = match_score
-        # The worst score is a primary penalty (mismatch or gap)
-        # plus two shared penalties from insertions on both sides.
-        min_val = min(mismatch_score, gap_penalty) + gap_penalty
+        min_val = min(mismatch_score, gap_penalty)
         
         score_range = max_val - min_val
         
-        assert score_range >= 0, "Invalid score range for normalization."
+        assert score_range > 0, "Invalid score range"
         normalized_scores = (x_penalties - min_val) / score_range
         
         if not (np.all(normalized_scores >= -1e-9) and np.all(normalized_scores <= 1.0 + 1e-9)):
@@ -86,9 +71,9 @@ def find_mismatches(x, y, *, gap_penalty=-1, match_score=1, mismatch_score=-1, n
                 f"Max score: {np.max(normalized_scores)}"
             )
 
-        return normalized_scores
-            
-    return x_penalties
+        return normalized_scores, omission_locations
+
+    return x_penalties, omission_locations
 
 def plot_waveform(waveform, sample_rate, *, agreement_scores):
     waveform = waveform.numpy()
