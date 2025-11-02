@@ -42,7 +42,7 @@ def get_hubert():
 
 
 @lru_cache()
-def get_kanade(variant : Literal["kanade-12hz", "kanade-25hz"]):
+def get_kanade(variant: Literal["kanade-12hz", "kanade-25hz"]):
     from encoder.kanade import KanadeEncoder
 
     # remote kanade-
@@ -53,12 +53,15 @@ def get_kanade(variant : Literal["kanade-12hz", "kanade-25hz"]):
         weights_path=KANADE_REPO_ROOT / f"weights/{name}.safetensors",
     )
 
+
 @lru_cache()
-def get_kanade_vocoder(variant : Literal["kanade-12hz", "kanade-25hz"]):
+def get_kanade_vocoder(variant: Literal["kanade-12hz", "kanade-25hz"]):
     from kanade_tokenizer.util import load_vocoder
+
     kanade = get_kanade(variant)
 
     return load_vocoder().to(kanade.device)
+
 
 @lru_cache()
 def get_kmeans_tokenizer():
@@ -68,7 +71,7 @@ def get_kmeans_tokenizer():
 
 
 @lru_cache()
-def get_dpdp_tokenizer(encoder : Literal["hubert", "kanade-12hz", "kanade-25hz"]):
+def get_dpdp_tokenizer(encoder: Literal["hubert", "kanade-12hz", "kanade-25hz"]):
     from tokenizer.dpdp import DPDPTokenizer
 
     if encoder == "hubert":
@@ -158,6 +161,7 @@ def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_path: 
 
     return streaming_response_of_audio(ywav, sr)
 
+
 @app.post("/process_audio")
 def process_audio_endpoint(file: UploadFile = File(...), apply_vad: bool = Form(True)):
     return streaming_response_of_audio_file(
@@ -205,9 +209,7 @@ def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
 def compare_endpoint(
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
-    gamma: float = Form(...),
     encoder: str = Form(...),
-    dpdp: bool = Form(...),
     discretize: bool = Form(...),
 ):
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
@@ -217,6 +219,7 @@ def compare_endpoint(
 
     if encoder == "hubert":
         hubert = get_hubert()
+        frame_duration = hubert.frame_shift
         x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate))
         y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate))
 
@@ -228,6 +231,7 @@ def compare_endpoint(
 
     else:
         kanade = get_kanade(encoder)
+        frame_duration = kanade.frame_shift
         xfeatures = kanade.encode_one(F.resample(xwav, xsr, kanade.sample_rate))
         yfeatures = kanade.encode_one(F.resample(ywav, ysr, kanade.sample_rate))
 
@@ -235,21 +239,14 @@ def compare_endpoint(
         y = yfeatures.content_embedding.cpu().float().numpy()
 
         def normal_tokens():
-            return xfeatures.content_token_indices.cpu().numpy(), yfeatures.content_token_indices.cpu().numpy()
+            return (
+                xfeatures.content_token_indices.cpu().numpy(),
+                yfeatures.content_token_indices.cpu().numpy(),
+            )
 
     if discretize:
-        if dpdp:
-            xcodes, xboundaries = get_dpdp_tokenizer(encoder).tokenize_one(x, gamma=gamma)
-            ycodes, yboundaries = get_dpdp_tokenizer(encoder).tokenize_one(y, gamma=gamma)
-
-            y_mismatches, _ = find_mismatches(ycodes, xcodes, normalize=True)
-            y_positions = np.zeros(len(y))
-            for i in range(len(y_mismatches)):
-                l, r = yboundaries[i], yboundaries[i + 1]
-                y_positions[l:r] = y_mismatches[i] # / (r - l)
-        else:
-            xtokens, ytokens = normal_tokens()
-            y_positions, _ = find_mismatches(ytokens, xtokens, normalize=True)
+        xtokens, ytokens = normal_tokens()
+        y_positions, _ = find_mismatches(ytokens, xtokens, normalize=True)
     else:
         cosine_sims = cosine_similarity(x, y)
         path = dtw_ndim.warping_path(x, y)
@@ -260,7 +257,10 @@ def compare_endpoint(
             y_scores_count[j] += 1
 
         y_positions = np.divide(
-            y_scores_sum, y_scores_count, out=np.zeros_like(y_scores_sum), where=y_scores_count != 0
+            y_scores_sum,
+            y_scores_count,
+            out=np.zeros_like(y_scores_sum),
+            where=y_scores_count != 0,
         )
 
         # visualize path for debugging
@@ -279,7 +279,46 @@ def compare_endpoint(
     # plt.savefig("/tmp/comparison.png")
     # plt.close()
 
-    return {"scores": y_positions.tolist(), "frameDuration": 0.02 if encoder == "hubert" else 0.08}
+    return {"scores": y_positions.tolist(), "frameDuration": frame_duration}
+
+
+@app.post("/compare_dpdp")
+def compare_dpdp_endpoint(
+    file: UploadFile = File(...),
+    model_file: UploadFile = File(...),
+    encoder: str = Form(...),
+    gamma: float = Form(...),
+):
+    xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
+    xwav = xwav.squeeze(0)
+    ywav, ysr = torchaudio.load_with_torchcodec(file.file)
+    ywav = ywav.squeeze(0)
+
+    if encoder == "hubert":
+        hubert = get_hubert()
+        frame_duration = hubert.frame_shift
+        x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate))
+        y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate))
+
+    else:
+        kanade = get_kanade(encoder)
+        frame_duration = kanade.frame_shift
+        xfeatures = kanade.encode_one(F.resample(xwav, xsr, kanade.sample_rate))
+        yfeatures = kanade.encode_one(F.resample(ywav, ysr, kanade.sample_rate))
+
+        x = xfeatures.content_embedding.cpu().float().numpy()
+        y = yfeatures.content_embedding.cpu().float().numpy()
+
+    xcodes, _ = get_dpdp_tokenizer(encoder).tokenize_one(x, gamma=gamma)
+    ycodes, yboundaries = get_dpdp_tokenizer(encoder).tokenize_one(y, gamma=gamma)
+
+    y_mismatches, _ = find_mismatches(ycodes, xcodes, normalize=True)
+
+    return {
+        "scores": y_mismatches.tolist(),
+        "boundaries": yboundaries.tolist(),
+        "frameDuration": frame_duration,
+    }
 
 
 @app.post("/compare_sylber")
@@ -331,11 +370,12 @@ def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile
         "y_to_x_mappings": y_to_x_mappings,
     }
 
+
 @app.post("/convert_voice")
 def convert_voice_endpoint(
     source: UploadFile = File(...),
     reference: UploadFile = File(...),
-    model : Literal["kanade-12hz", "kanade-25hz"] = Form(...),
+    model: Literal["kanade-12hz", "kanade-25hz"] = Form(...),
 ):
     from kanade_tokenizer.util import vocode
 
@@ -347,17 +387,20 @@ def convert_voice_endpoint(
 
     mel_spectrogram = kanade.model.voice_conversion(
         source_waveform=F.resample(source_wav, source_sr, kanade.sample_rate).to(kanade.device),
-        reference_waveform=F.resample(reference_wav, reference_sr, kanade.sample_rate).to(kanade.device),
+        reference_waveform=F.resample(reference_wav, reference_sr, kanade.sample_rate).to(
+            kanade.device
+        ),
     )
     vocoder = get_kanade_vocoder(model)
     converted_waveform = vocode(vocoder, mel_spectrogram.unsqueeze(0))
 
     return streaming_response_of_audio(converted_waveform, kanade.sample_rate)
 
+
 @app.post("/reconstruct")
 def reconstruct_endpoint(
     file: UploadFile = File(...),
-    model : Literal["kanade-12hz", "kanade-25hz"] = Form(...),
+    model: Literal["kanade-12hz", "kanade-25hz"] = Form(...),
 ):
     from kanade_tokenizer.util import vocode
 

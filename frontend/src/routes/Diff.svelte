@@ -3,6 +3,7 @@
 	import { postBlob, postJson } from '$lib/api';
 	import {
 		buildContinuousRegions,
+		buildSegmentRegions,
 		buildSyllableRegions,
 		type Region,
 		type SylberResult
@@ -41,10 +42,12 @@
 	// Fixed-rate diff
 	let encoder = $state('hubert');
 	let discretize = $state(true);
+	let combineRegions = $state(true);
 	let dpdp = $state(true);
 	let gamma = $state('0.2');
 	let frameDuration = $state(0.02);
 	let scores = $state<number[]>([]);
+	let boundaries = $state<number[] | undefined>();
 
 	// Threshold controls
 	let trigger = $state(0.6);
@@ -73,7 +76,7 @@
 	const userRegions = $derived.by(() => {
 		if (comparisonMode === 'fixedRate') {
 			if (discretize) {
-				return buildContinuousRegions(scores, frameDuration, 0.5, 0.5);
+				return buildSegmentRegions(scores, frameDuration, boundaries, combineRegions);
 			} else {
 				return buildContinuousRegions(scores, frameDuration, trigger, trigger - 0.05);
 			}
@@ -96,6 +99,7 @@
 
 			loading = true;
 			scores = [];
+			boundaries = undefined;
 			sylberResult = undefined;
 
 			const formData = new FormData();
@@ -105,16 +109,17 @@
 			try {
 				if (comparisonMode === 'fixedRate') {
 					formData.append('encoder', encoder);
-					formData.append('discretize', discretize ? '1' : '0');
-					formData.append('dpdp', dpdp ? '1' : '0');
-					formData.append('gamma', gamma);
-					const data = await postJson<{ frameDuration: number; scores: number[] }>(
-						`/api/compare`,
-						formData,
-						controller.signal
-					);
+					let data: { scores: number[]; boundaries: number[] | undefined; frameDuration: number };
+					if (discretize && dpdp) {
+						formData.append('gamma', gamma);
+						data = await postJson(`/api/compare_dpdp`, formData, controller.signal);
+					} else {
+						formData.append('discretize', discretize ? '1' : '0');
+						data = await postJson(`/api/compare`, formData, controller.signal);
+					}
 					frameDuration = data.frameDuration;
 					scores = data.scores ?? [];
+					boundaries = data.boundaries;
 				} else {
 					const data = await postJson<SylberResult>(
 						`/api/compare_sylber`,
@@ -189,6 +194,10 @@
 	</div>
 	<div class="viewer-card">
 		<SampleViewer audio={convertVoice ? convertedAudio : audio} regions={userRegions} />
+		<details>
+			<summary>Debug Info</summary>
+			<p>Scores: {scores.join(', ')}</p>
+		</details>
 	</div>
 
 	<div class="controls">
@@ -227,21 +236,25 @@
 					</div>
 					<fieldset class="sub-fieldset">
 						{#if discretize}
-								<label>
-									DPDP:
-									<input type="checkbox" bind:checked={dpdp} />
-								</label>
-								<label class:disabled={!dpdp}>
-									Gamma: {gamma}
-									<input
-										type="range"
-										min="0.0"
-										max="1.0"
-										step="0.1"
-										bind:value={gamma}
-										disabled={!dpdp}
-									/>
-								</label>
+							<label>
+								Combine Regions:
+								<input type="checkbox" bind:checked={combineRegions} />
+							</label>
+							<label>
+								DPDP:
+								<input type="checkbox" bind:checked={dpdp} />
+							</label>
+							<label class:disabled={!dpdp}>
+								Gamma: {gamma}
+								<input
+									type="range"
+									min="0.0"
+									max="1.0"
+									step="0.1"
+									bind:value={gamma}
+									disabled={!dpdp}
+								/>
+							</label>
 						{:else}
 							<label>
 								Trigger:
