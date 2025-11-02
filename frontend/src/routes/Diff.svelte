@@ -47,9 +47,7 @@
 	let scores = $state<number[]>([]);
 
 	// Threshold controls
-	let discreteTrigger = $state(0.3);
-	let continuousTrigger = $state(0.6);
-	let trigger = $derived(discretize ? discreteTrigger : continuousTrigger);
+	let trigger = $state(0.6);
 
 	// Syllable diff
 	let sylberResult: SylberResult | undefined = $state();
@@ -74,7 +72,11 @@
 
 	const userRegions = $derived.by(() => {
 		if (comparisonMode === 'fixedRate') {
-			return buildContinuousRegions(scores, frameDuration, trigger, trigger - 0.05);
+			if (discretize) {
+				return buildContinuousRegions(scores, frameDuration, 0.5, 0.5);
+			} else {
+				return buildContinuousRegions(scores, frameDuration, trigger, trigger - 0.05);
+			}
 		}
 		return sylberResult ? buildSyllableRegions(sylberResult) : ([] as Region[]);
 	});
@@ -223,44 +225,30 @@
 							Discrete
 						</label>
 					</div>
-					<label>
-						Trigger:
-						<input
-							type="range"
-							min="0.0"
-							max="1.0"
-							step="0.05"
-							bind:value={
-								() => trigger,
-								(v) => {
-									if (discretize) {
-										discreteTrigger = v;
-									} else {
-										continuousTrigger = v;
-									}
-								}
-							}
-						/>
-					</label>
-					{#if discretize}
-						<fieldset class="sub-fieldset">
+					<fieldset class="sub-fieldset">
+						{#if discretize}
+								<label>
+									DPDP:
+									<input type="checkbox" bind:checked={dpdp} />
+								</label>
+								<label class:disabled={!dpdp}>
+									Gamma: {gamma}
+									<input
+										type="range"
+										min="0.0"
+										max="1.0"
+										step="0.1"
+										bind:value={gamma}
+										disabled={!dpdp}
+									/>
+								</label>
+						{:else}
 							<label>
-								DPDP:
-								<input type="checkbox" bind:checked={dpdp} />
+								Trigger:
+								<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />
 							</label>
-							<label class:disabled={!dpdp}>
-								Gamma: {gamma}
-								<input
-									type="range"
-									min="0.0"
-									max="1.0"
-									step="0.1"
-									bind:value={gamma}
-									disabled={!dpdp}
-								/>
-							</label>
-						</fieldset>
-					{/if}
+						{/if}
+					</fieldset>
 				</fieldset>
 			{/if}
 		</fieldset>

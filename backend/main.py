@@ -242,14 +242,14 @@ def compare_endpoint(
             xcodes, xboundaries = get_dpdp_tokenizer(encoder).tokenize_one(x, gamma=gamma)
             ycodes, yboundaries = get_dpdp_tokenizer(encoder).tokenize_one(y, gamma=gamma)
 
-            y_mismatches = find_mismatches(ycodes, xcodes, normalize=True)
+            y_mismatches, _ = find_mismatches(ycodes, xcodes, normalize=True)
             y_positions = np.zeros(len(y))
             for i in range(len(y_mismatches)):
                 l, r = yboundaries[i], yboundaries[i + 1]
-                y_positions[l:r] = y_mismatches[i] / (r - l)
+                y_positions[l:r] = y_mismatches[i] # / (r - l)
         else:
             xtokens, ytokens = normal_tokens()
-            y_positions = find_mismatches(ytokens, xtokens, normalize=True)
+            y_positions, _ = find_mismatches(ytokens, xtokens, normalize=True)
     else:
         cosine_sims = cosine_similarity(x, y)
         path = dtw_ndim.warping_path(x, y)
