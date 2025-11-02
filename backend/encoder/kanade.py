@@ -35,6 +35,10 @@ class KanadeEncoder:
     def sample_rate(self) -> int:
         return self.model.config.sample_rate
 
+    @property
+    def frame_shift(self) -> float:
+        return self.model.downsample_factor * 0.02 # since WavLM uses 20ms frames
+
     @cached_property
     def codebook(self) -> np.ndarray:
         with torch.no_grad():

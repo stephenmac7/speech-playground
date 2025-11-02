@@ -1,7 +1,7 @@
 // Region utilities shared by routes
 // Note: DOM operations (document.createElement) occur only when these functions are called in the browser.
 
-export type Region = { start: number; end: number; content: HTMLElement; color: string };
+export type Region = { start: number; end: number; content: string; color: string };
 
 export type SylberResult = {
 	scores: number[];
@@ -9,12 +9,6 @@ export type SylberResult = {
 	ysegments: number[][];
 	y_to_x_mappings: number[][];
 };
-
-export function labelSpan(text: string): HTMLElement {
-	const el = document.createElement('span');
-	el.textContent = text;
-	return el;
-}
 
 export function buildContinuousRegions(
     allScores: number[],
@@ -45,7 +39,7 @@ export function buildContinuousRegions(
             start: startFrame * frameDur,
             end: endFrame * frameDur,
             color: `rgba(255, 0, 0, ${opacity})`,
-            content: labelSpan(avg.toFixed(2))
+            content: String(avg.toFixed(2)),
         });
     };
 
@@ -79,6 +73,91 @@ export function buildContinuousRegions(
     return regions;
 }
 
+export function buildCombinedSegmentRegions(
+    scores: number[], // size N
+    frameDur: number,
+    boundaries: number[] | undefined, // size N+1
+): Region[] {
+    const regions: Region[] = [];
+    let currentRegion: { start: number; scores: number[] } | undefined;
+    let seenGoodFrames = 0;
+
+    const createRegion = (region: { start: number; end: number; scores: number[] }) => {
+        const avg = region.scores.reduce((a, b) => a + b, 0) / region.scores.length;
+        const opacity = 0.8 * (1 - avg);
+        regions.push({
+            start: region.start,
+            end: region.end,
+            color: `rgba(255, 0, 0, ${opacity})`,
+            content: String(avg.toFixed(2)),
+        });
+    };
+
+    scores.forEach((score, i) => {
+        if (score < 0.5) {
+            if (!currentRegion) {
+                currentRegion = {
+                    start: boundaries ? boundaries[i] * frameDur : i * frameDur,
+                    scores: []
+                };
+            }
+            currentRegion.scores.push(score);
+            seenGoodFrames = 0;
+        }  else if (currentRegion && seenGoodFrames < 2) {
+            // Allow some patience to continue the region
+            currentRegion.scores.push(score);
+            seenGoodFrames++;
+        } else if (currentRegion) {
+            // End the current region
+            const lastBadFrame = i - seenGoodFrames;
+            createRegion({
+                start: currentRegion.start,
+                end: boundaries ? boundaries[lastBadFrame] * frameDur : lastBadFrame * frameDur,
+                scores: currentRegion.scores.slice(0, lastBadFrame - (i - currentRegion.scores.length))
+            });
+            currentRegion = undefined;
+        }
+    });
+
+    // Handle a region that might be open at the end -- make sure to deal with last good frames
+    if (currentRegion) {
+        const lastBadFrame = scores.length - seenGoodFrames;
+        createRegion({
+            start: currentRegion.start,
+            end: boundaries ? boundaries[lastBadFrame] * frameDur : lastBadFrame * frameDur,
+            scores: currentRegion.scores.slice(0, lastBadFrame - (scores.length - currentRegion.scores.length))
+        });
+    }
+
+    return regions;
+}
+
+
+
+export function buildSegmentRegions(
+    scores: number[], // size N
+    frameDur: number,
+    boundaries: number[] | undefined, // size N+1
+    combineRegions: boolean = false,
+): Region[] {
+    if (combineRegions) {
+        return buildCombinedSegmentRegions(scores, frameDur, boundaries);
+    }
+    const regions: Region[] = [];
+    scores.forEach((score, i) => {
+        if (score < 0.5) {
+            const opacity = 0.8 * (1 - score);
+            regions.push({
+                start: boundaries ? boundaries[i] * frameDur : i * frameDur,
+                end: boundaries ? boundaries[i + 1] * frameDur : (i + 1) * frameDur,
+                color: `rgba(255, 0, 0, ${opacity})`,
+                content: "",
+            });
+        }
+    });
+    return regions;
+}
+
 export function buildSyllableRegions(result: SylberResult): Region[] {
 	const regions: Region[] = [];
 	result.scores.forEach((score, i) => {
@@ -87,7 +166,7 @@ export function buildSyllableRegions(result: SylberResult): Region[] {
 			start: result.ysegments[i][0],
 			end: result.ysegments[i][1],
 			color: `rgba(255, 0, 0, ${opacity})`,
-			content: labelSpan(result.y_to_x_mappings[i].map((idx) => idx.toString()).join(', '))
+			content: result.y_to_x_mappings[i].map((idx) => idx.toString()).join(', ')
 		});
 	});
 	return regions;

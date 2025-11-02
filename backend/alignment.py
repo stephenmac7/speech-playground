@@ -18,8 +18,9 @@ def compute_match_grid(x, y, *, gap_penalty, match_score, mismatch_score):
             )
     return grid
 
-def find_mismatches(x, y, *, gap_penalty=-1, match_score=1, mismatch_score=-1, normalize=False):
-    # x = learner, y = reference
+def find_mismatches(learner, reference, *, gap_penalty=-1, match_score=1, mismatch_score=-1, normalize=False):
+    x = learner
+    y = reference
 
     # Step 1: Compute the alignment score grid
     grid = compute_match_grid(

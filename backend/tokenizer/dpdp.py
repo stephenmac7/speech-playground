@@ -81,3 +81,24 @@ class DPDPTokenizer:
     def tokenize_one(self, features: np.ndarray, *, gamma=0.2) -> np.ndarray:
         # features: (T, D)
         return segment(features, self.cluster_centers, gamma=gamma)
+
+
+def expand(y_len: int, yfeatures: np.ndarray, yboundaries: np.ndarray) -> np.ndarray:
+    """Expands segment-level features (scalars or vectors) to frame-level.
+
+    Args:
+        y_len (int): The total number of frames in the original sequence (T).
+        yfeatures (NDArray): Array of segment-level features.  Shape (N, ...)
+        yboundaries (NDArray[int]): Array of segment boundaries, shape (N+1,).
+
+    Returns:
+        NDArray: A frame-level representation, where each frame is
+                 assigned the feature of the segment it belongs to.
+                 Shape (y_len, ...).
+    """
+    y_positions = np.zeros((y_len,) + yfeatures.shape[1:], dtype=yfeatures.dtype)
+
+    for i in range(len(yfeatures)):
+        y_positions[yboundaries[i]:yboundaries[i+1]] = yfeatures[i]
+
+    return y_positions
