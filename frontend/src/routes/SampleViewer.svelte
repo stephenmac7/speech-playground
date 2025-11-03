@@ -3,7 +3,7 @@
 	import ZoomPlugin from 'wavesurfer.js/dist/plugins/zoom.js';
 	import RegionsPlugin, { type RegionParams } from 'wavesurfer.js/dist/plugins/regions.js';
 
-	let { audio, regions = [], clickableRegions = true, zoom = true, layout = 'default' } = $props();
+	let { audio, regions = [], clickableRegions = true, zoom = true, layout = 'default', compareWith = null } = $props();
 
 	let node: HTMLElement;
 
@@ -12,8 +12,38 @@
 	let playing = $state(false);
 	let time = $state(0);
 	let duration = $state(0);
+	let dragStart : number | undefined = $state();
+	let shiftDown = $state(false);
+	let playOther = $state(false);
 
 	let height = $derived(layout === 'compact' ? 70 : 128);
+
+	// Track Shift key globally so drag handlers can read the state reliably
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Shift') shiftDown = true;
+	}
+	function handleKeyup(e: KeyboardEvent) {
+		if (e.key === 'Shift') shiftDown = false;
+	}
+	function handleWindowBlur() {
+		// Reset when the window loses focus to avoid sticky state
+		shiftDown = false;
+	}
+
+	function startTimeInOther(frame: number) {
+		if (compareWith.modelBoundaries) {
+			return compareWith.modelBoundaries[compareWith.alignmentMap[frame]] * compareWith.frameDuration;
+		} else {
+			return compareWith.alignmentMap[frame] * compareWith.frameDuration;
+		}
+	}
+	function endTimeInOther(frame: number) {
+		if (compareWith.modelBoundaries) {
+			return compareWith.modelBoundaries[compareWith.alignmentMap[frame] + 1] * compareWith.frameDuration;
+		} else {
+			return (compareWith.alignmentMap[frame] + 1) * compareWith.frameDuration;
+		}
+	}
 
 	$effect(() => {
 		if (!audio) return;
@@ -32,16 +62,71 @@
 			cursorWidth: 2,
 			height: height,
 			mediaControls: false,
-			dragToSeek: true,
 			backend: 'WebAudio',
 			hideScrollbar: !zoom,
 			plugins: plugins
 		});
 		wavesurfer.on('timeupdate', (t) => (time = t));
-		wavesurfer.on('interaction', () => wavesurfer.play());
 		wavesurfer.on('play', () => (playing = true));
 		wavesurfer.on('pause', () => (playing = false));
 		wavesurfer.on('decode', () => (duration = wavesurfer.getDuration()));
+		(wavesurfer as any).renderer.initDrag(); // hack to enable drag events without dragToSeek set
+		wavesurfer.on('dragstart', (relativeX) => {
+			wavesurfer.stop();
+			dragStart = relativeX * duration;
+			playOther = shiftDown;
+		});
+		wavesurfer.on('interaction', () => {
+			if (!dragStart) wavesurfer.play();
+		});
+		wavesurfer.on('dragend', (relativeX) => {
+			if (!dragStart) return;
+			const dragEnd = relativeX * duration;
+			if (dragStart > dragEnd) {
+				// probably just meant to seek
+				dragStart = undefined;
+				playOther = false;
+				wavesurfer.play();
+				return;
+			}
+			if (playOther) {
+				if (compareWith && compareWith.alignmentMap) {
+					const rawStartFrame = Math.floor(dragStart / compareWith.frameDuration);
+					const rawEndFrame = Math.ceil(dragEnd / compareWith.frameDuration);
+					let startFrame: number, endFrame: number;
+					if (compareWith.boundaries && compareWith.modelBoundaries) {
+						// snap to region boundaries, without losing any content
+						startFrame = 0;
+						for (let i = 0; i < compareWith.boundaries.length; i++) {
+							if (compareWith.boundaries[i] == rawStartFrame) {
+								startFrame = i;
+								break;
+							} else if (compareWith.boundaries[i] > rawStartFrame) {
+								startFrame = i === 0 ? 0 : i - 1;
+								break;
+							}
+						}
+						endFrame = compareWith.boundaries[compareWith.boundaries.length - 1];
+						for (let i = 0; i < compareWith.boundaries.length; i++) {
+							if (compareWith.boundaries[i] >= rawEndFrame) {
+								endFrame = i;
+								break;
+							}
+						}
+					} else {
+						startFrame = rawStartFrame;
+						endFrame = rawEndFrame;
+					}
+					const otherStartTime = startTimeInOther(startFrame);
+					const otherEndTime = endTimeInOther(endFrame);
+					compareWith.other.play(otherStartTime, otherEndTime);
+				}
+			} else {
+				wavesurfer.play(dragStart, dragEnd);
+			}
+			dragStart = undefined;
+			playOther = false;
+		});
 
 		let cancelled = false;
 
@@ -49,7 +134,16 @@
 			if (clickableRegions) {
 				regionsPlugin.on('region-clicked', (region, e) => {
 					e.stopPropagation();
-					region.play(true);
+					if (e.shiftKey) {
+						if (compareWith && compareWith.alignmentMap) {
+							const [startFrame, endFrame] = region.id.split('-').slice(1).map(Number);
+							const otherStartTime = startTimeInOther(startFrame);
+							const otherEndTime = endTimeInOther(endFrame);
+							compareWith.other.play(otherStartTime, otherEndTime);
+						}
+					} else {
+						region.play(true);
+					}
 				});
 			}
 			regionsPlugin['avoidOverlapping'] = () => null;
@@ -88,7 +182,15 @@
 
 		return `${minutes}:${seconds < 10 ? `0${seconds}` : seconds}`;
 	}
+
+	export function play(start?: number, end?: number) {
+		if (wavesurfer) {
+			wavesurfer.play(start, end);
+		}
+	}
 </script>
+
+<svelte:window on:keydown={handleKeydown} on:keyup={handleKeyup} on:blur={handleWindowBlur} />
 
 <div class="sample-viewer" class:compact={layout === 'compact'}>
 	{#if layout !== 'compact'}

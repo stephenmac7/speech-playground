@@ -20,11 +20,18 @@ from dtaidistance import dtw_ndim
 import torchaudio
 import torchaudio.functional as F
 
-from alignment import find_mismatches, plot_waveform
+from alignment import score_frames, plot_waveform, build_alignments
 
-KMEANS_PATH = "/home/smcintosh/default/dusted/kmeans_en+ja_200.joblib"
+KMEANS_PATH = Path("/home/smcintosh/default/dusted/kmeans_en+ja_200.joblib")
 KANADE_REPO_ROOT = Path("/home/smcintosh/kanade-tokenizer")
+KANADE_SLUGS = {
+    "kanade-12hz": "12hz",
+    "kanade-25hz": "25hz",
+    "kanade-25hz-small-vocab": "25hz_small_vocab",
+}
+INVERSION_WEIGHTS_PATH = Path("/home/smcintosh/default/ume_erj/checkpoints/inversion/vvn_distilled_baseplus")
 
+Encoder = Literal["hubert", "kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab", "inversion"]
 
 # --- Lazy, cached factories (loaded on first use) ---
 @lru_cache()
@@ -42,20 +49,22 @@ def get_hubert():
 
 
 @lru_cache()
-def get_kanade(variant: Literal["kanade-12hz", "kanade-25hz"]):
+def get_kanade(variant: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"]):
     from encoder.kanade import KanadeEncoder
 
-    # remote kanade-
-    name = variant.replace("kanade-", "")
-
     return KanadeEncoder(
-        config_path=KANADE_REPO_ROOT / f"config/model/{name}.yaml",
-        weights_path=KANADE_REPO_ROOT / f"weights/{name}.safetensors",
+        config_path=KANADE_REPO_ROOT / f"config/model/{KANADE_SLUGS[variant]}.yaml",
+        weights_path=KANADE_REPO_ROOT / f"weights/{KANADE_SLUGS[variant]}.safetensors",
     )
+
+@lru_cache()
+def get_articulatory_inversion():
+    from encoder.articulatory_inversion import ArticulatoryInversionEncoder
+    return ArticulatoryInversionEncoder(weights=Path(INVERSION_WEIGHTS_PATH))
 
 
 @lru_cache()
-def get_kanade_vocoder(variant: Literal["kanade-12hz", "kanade-25hz"]):
+def get_kanade_vocoder(variant: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"]):
     from kanade_tokenizer.util import load_vocoder
 
     kanade = get_kanade(variant)
@@ -71,11 +80,13 @@ def get_kmeans_tokenizer():
 
 
 @lru_cache()
-def get_dpdp_tokenizer(encoder: Literal["hubert", "kanade-12hz", "kanade-25hz"]):
+def get_dpdp_tokenizer(encoder: Encoder):
     from tokenizer.dpdp import DPDPTokenizer
 
     if encoder == "hubert":
         cluster_centers = get_kmeans_model().cluster_centers_
+    elif encoder == "inversion":
+        raise NotImplementedError("DPDP tokenizer for inversion encoder is not implemented yet.")
     else:
         cluster_centers = get_kanade(encoder).codebook
 
@@ -151,6 +162,8 @@ def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_path: 
 
     if apply_vad:
         ywav = F.vad(ywav, sr)
+        if ywav.shape[1] == 0:
+            raise HTTPException(status_code=400, detail="No speech detected after VAD.")
 
     if debug_save_path is not None:
         torchaudio.save(debug_save_path, ywav, sr)
@@ -209,7 +222,7 @@ def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
 def compare_endpoint(
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
-    encoder: str = Form(...),
+    encoder: Encoder = Form(...),
     discretize: bool = Form(...),
 ):
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
@@ -223,12 +236,19 @@ def compare_endpoint(
         x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate))
         y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate))
 
-        def normal_tokens():
+        def get_tokens():
             tok = get_kmeans_tokenizer()
             x_tokens = tok.tokenize_one(x)
             y_tokens = tok.tokenize_one(y)
             return x_tokens, y_tokens
+    elif encoder == "inversion":
+        inversion = get_articulatory_inversion()
+        frame_duration = inversion.frame_shift
+        x = inversion.encode_one(F.resample(xwav, xsr, inversion.sample_rate))
+        y = inversion.encode_one(F.resample(ywav, ysr, inversion.sample_rate))
 
+        def get_tokens():
+            raise HTTPException(status_code=501, detail="Tokenization for inversion encoder is not available.")
     else:
         kanade = get_kanade(encoder)
         frame_duration = kanade.frame_shift
@@ -238,22 +258,25 @@ def compare_endpoint(
         x = xfeatures.content_embedding.cpu().float().numpy()
         y = yfeatures.content_embedding.cpu().float().numpy()
 
-        def normal_tokens():
+        def get_tokens():
             return (
                 xfeatures.content_token_indices.cpu().numpy(),
                 yfeatures.content_token_indices.cpu().numpy(),
             )
 
     if discretize:
-        xtokens, ytokens = normal_tokens()
-        y_positions, _ = find_mismatches(ytokens, xtokens, normalize=True)
+        xtokens, ytokens = get_tokens()
+        y_positions, path = score_frames(ytokens, xtokens, normalize=True)
+        alignment_map = build_alignments(path, len(ytokens), len(xtokens))
     else:
         cosine_sims = cosine_similarity(x, y)
         path = dtw_ndim.warping_path(x, y)
+        alignment_map = np.zeros(len(y), dtype=int)
         y_scores_sum = np.zeros(len(y))
         y_scores_count = np.zeros(len(y))
         for i, j in path:
-            y_scores_sum[j] = cosine_sims[i, j]
+            alignment_map[j] = i # overwrites previous, but that's what we want
+            y_scores_sum[j] += cosine_sims[i, j]
             y_scores_count[j] += 1
 
         y_positions = np.divide(
@@ -278,17 +301,18 @@ def compare_endpoint(
     # plot_waveform(ywav, sr, agreement_scores=y_positions)
     # plt.savefig("/tmp/comparison.png")
     # plt.close()
-
-    return {"scores": y_positions.tolist(), "frameDuration": frame_duration}
+    return {"scores": y_positions.tolist(), "frameDuration": frame_duration, "alignmentMap": alignment_map.tolist()}
 
 
 @app.post("/compare_dpdp")
 def compare_dpdp_endpoint(
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
-    encoder: str = Form(...),
+    encoder: Encoder = Form(...),
     gamma: float = Form(...),
 ):
+    if encoder == "inversion":
+        raise HTTPException(status_code=501, detail="DPDP for inversion encoder is not available.")
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
     xwav = xwav.squeeze(0)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
@@ -309,15 +333,21 @@ def compare_dpdp_endpoint(
         x = xfeatures.content_embedding.cpu().float().numpy()
         y = yfeatures.content_embedding.cpu().float().numpy()
 
-    xcodes, _ = get_dpdp_tokenizer(encoder).tokenize_one(x, gamma=gamma)
+    xcodes, xboundaries = get_dpdp_tokenizer(encoder).tokenize_one(x, gamma=gamma)
     ycodes, yboundaries = get_dpdp_tokenizer(encoder).tokenize_one(y, gamma=gamma)
 
-    y_mismatches, _ = find_mismatches(ycodes, xcodes, normalize=True)
+    y_mismatches, path = score_frames(ycodes, xcodes, normalize=True)
+    alignment_map_codes = build_alignments(path, len(ycodes), len(xcodes))
+    alignment_map = np.zeros(len(y), dtype=int)
+    for j in range(len(ycodes)):
+        alignment_map[j] = alignment_map_codes[j]
 
     return {
         "scores": y_mismatches.tolist(),
         "boundaries": yboundaries.tolist(),
+        "modelBoundaries": xboundaries.tolist(),
         "frameDuration": frame_duration,
+        "alignmentMap": alignment_map.tolist(),
     }
 
 
@@ -355,7 +385,7 @@ def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile
     y_scores_count = np.zeros(len(ysegments))
     y_to_x_mappings = [[] for _ in range(len(ysegments))]
     for i, j in path:
-        y_scores_sum[j] = cosine_sims[i, j]
+        y_scores_sum[j] += cosine_sims[i, j]
         y_scores_count[j] += 1
         y_to_x_mappings[j].append(i)
 
@@ -375,7 +405,7 @@ def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile
 def convert_voice_endpoint(
     source: UploadFile = File(...),
     reference: UploadFile = File(...),
-    model: Literal["kanade-12hz", "kanade-25hz"] = Form(...),
+    model: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"] = Form(...),
 ):
     from kanade_tokenizer.util import vocode
 
@@ -400,7 +430,7 @@ def convert_voice_endpoint(
 @app.post("/reconstruct")
 def reconstruct_endpoint(
     file: UploadFile = File(...),
-    model: Literal["kanade-12hz", "kanade-25hz"] = Form(...),
+    model: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"] = Form(...),
 ):
     from kanade_tokenizer.util import vocode
 

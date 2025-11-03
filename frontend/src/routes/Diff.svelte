@@ -36,6 +36,9 @@
 		if (!reconstructModel) reconstructedAudio = undefined;
 	});
 
+	// ---------- Model viewer (for control from sample viewer) ----------
+	let modelViewer: SampleViewer | undefined = $state();
+
 	// ---------- Comparison controls ----------
 	let comparisonMode = $state<ComparisonMode>('fixedRate');
 
@@ -48,6 +51,8 @@
 	let frameDuration = $state(0.02);
 	let scores = $state<number[]>([]);
 	let boundaries = $state<number[] | undefined>();
+	let modelBoundaries = $state<number[] | undefined>();
+	let alignmentMap = $state<number[] | undefined>();
 
 	// Threshold controls
 	let trigger = $state(0.6);
@@ -100,6 +105,8 @@
 			loading = true;
 			scores = [];
 			boundaries = undefined;
+			modelBoundaries = undefined;
+			alignmentMap = undefined;
 			sylberResult = undefined;
 
 			const formData = new FormData();
@@ -109,7 +116,13 @@
 			try {
 				if (comparisonMode === 'fixedRate') {
 					formData.append('encoder', encoder);
-					let data: { scores: number[]; boundaries: number[] | undefined; frameDuration: number };
+					let data: {
+						scores: number[];
+						boundaries: number[] | undefined;
+						modelBoundaries: number[] | undefined;
+						frameDuration: number;
+						alignmentMap?: number[];
+					};
 					if (discretize && dpdp) {
 						formData.append('gamma', gamma);
 						data = await postJson(`/api/compare_dpdp`, formData, controller.signal);
@@ -119,7 +132,9 @@
 					}
 					frameDuration = data.frameDuration;
 					scores = data.scores ?? [];
+					alignmentMap = data.alignmentMap ?? [];
 					boundaries = data.boundaries;
+					modelBoundaries = data.modelBoundaries;
 				} else {
 					const data = await postJson<SylberResult>(
 						`/api/compare_sylber`,
@@ -190,13 +205,20 @@
 		<SampleViewer
 			audio={reconstructModel ? reconstructedAudio : modelAudio}
 			regions={modelRegions}
+			bind:this={modelViewer}
 		/>
 	</div>
 	<div class="viewer-card">
-		<SampleViewer audio={convertVoice ? convertedAudio : audio} regions={userRegions} />
+		<SampleViewer
+			audio={convertVoice ? convertedAudio : audio}
+			regions={userRegions}
+			compareWith={{ other: modelViewer, boundaries, modelBoundaries, alignmentMap: alignmentMap, frameDuration: frameDuration }}
+		/>
 		<details>
 			<summary>Debug Info</summary>
-			<p>Scores: {scores.join(', ')}</p>
+			<p style="font-family: monospace">
+				Scores: {scores.map((score) => score.toFixed(2)).join(', ')}
+			</p>
 		</details>
 	</div>
 
@@ -218,10 +240,17 @@
 					<legend>Comparison</legend>
 					<label>
 						Encoder:
-						<select bind:value={encoder}>
+						<select
+							bind:value={encoder}
+							onchange={() => {
+								if (encoder === 'inversion') discretize = false;
+							}}
+						>
 							<option value="hubert">HuBERT</option>
 							<option value="kanade-12hz">Kanade 12.5 Hz</option>
 							<option value="kanade-25hz">Kanade 25 Hz</option>
+							<option value="kanade-25hz-small-vocab">Kanade 25 Hz (Small Vocab)</option>
+							<option value="inversion">Articulatory Inversion</option>
 						</select>
 					</label>
 					<div class="radio-group">
@@ -229,7 +258,7 @@
 							<input type="radio" bind:group={discretize} value={false} />
 							Continuous
 						</label>
-						<label>
+						<label class:disabled={encoder === 'inversion'}>
 							<input type="radio" bind:group={discretize} value={true} />
 							Discrete
 						</label>
@@ -275,6 +304,7 @@
 				<select bind:value={voiceConversionModel}>
 					<option value="kanade-12hz">Kanade 12.5 Hz</option>
 					<option value="kanade-25hz">Kanade 25 Hz</option>
+					<option value="kanade-25hz-small-vocab">Kanade 25 Hz (Small Vocab)</option>
 				</select>
 			</label>
 		</fieldset>

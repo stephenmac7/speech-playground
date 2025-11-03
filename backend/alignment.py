@@ -18,7 +18,7 @@ def compute_match_grid(x, y, *, gap_penalty, match_score, mismatch_score):
             )
     return grid
 
-def find_mismatches(learner, reference, *, gap_penalty=-1, match_score=1, mismatch_score=-1, normalize=False):
+def score_frames(learner, reference, *, gap_penalty=-1, match_score=1, mismatch_score=-1, normalize=False):
     x = learner
     y = reference
 
@@ -32,7 +32,7 @@ def find_mismatches(learner, reference, *, gap_penalty=-1, match_score=1, mismat
 
     # Step 2: Backtrack, calculate primary penalties, and record omissions
     x_penalties = np.zeros(len(x))
-    omission_locations = []
+    alignment_path = []
 
     i = len(x)
     j = np.argmax(grid[i, :])  # Start at the max in the last row
@@ -42,19 +42,23 @@ def find_mismatches(learner, reference, *, gap_penalty=-1, match_score=1, mismat
 
         if np.isclose(grid[i, j], grid[i - 1, j - 1] + current_match_score):
             x_penalties[i - 1] = current_match_score
+            alignment_path.append((i - 1, j - 1))
             i -= 1
             j -= 1
-        elif np.isclose(grid[i, j], grid[i - 1, j] + gap_penalty):
+        elif np.isclose(grid[i, j], grid[i - 1, j] + gap_penalty): # Gap in reference
             x_penalties[i - 1] = gap_penalty
+            alignment_path.append((i - 1, None))
             i -= 1
-        else:
-            # This is an omission. Record the 'x' index *before* the gap.
-            omission_locations.append(i)
+        else: # Gap in learner
+            alignment_path.append((None, j - 1))
             j -= 1
 
     while i > 0:
         x_penalties[i - 1] = gap_penalty
+        alignment_path.append((i - 1, None))
         i -= 1
+
+    alignment_path.reverse()
 
     if normalize:
         max_val = match_score
@@ -72,9 +76,9 @@ def find_mismatches(learner, reference, *, gap_penalty=-1, match_score=1, mismat
                 f"Max score: {np.max(normalized_scores)}"
             )
 
-        return normalized_scores, omission_locations
+        return normalized_scores, alignment_path
 
-    return x_penalties, omission_locations
+    return x_penalties, alignment_path
 
 def plot_waveform(waveform, sample_rate, *, agreement_scores):
     waveform = waveform.numpy()
@@ -117,113 +121,43 @@ def plot_waveform(waveform, sample_rate, *, agreement_scores):
     plt.tight_layout()
 
 
-# def transfer_intervals(labels, alignment_map, sr=16000):
-#     """
-#     Transfers intervals from x to y using the alignment map.
-#     'labels' is a list of tgt.Annotation objects.
-#     """
-#     x_samples, y_samples = alignment_map
-#     
-#     new_intervals = []
-#     for label in labels:
-#         start_time, end_time, text = label.start_time, label.end_time, label.text
-#         
-#         # 1. Convert x's times to sample indices
-#         x_start_sample = start_time * sr
-#         x_end_sample = end_time * sr
-#         
-#         # 2. Interpolate to find y's corresponding sample indices
-#         y_start_sample = np.interp(x_start_sample, x_samples, y_samples)
-#         y_end_sample = np.interp(x_end_sample, x_samples, y_samples)
-#         
-#         # 3. Convert y's sample indices back to times
-#         y_start_time = y_start_sample / sr
-#         y_end_time = y_end_sample / sr
-#         
-#         new_intervals.append(tgt.Annotation(
-#             text=text,
-#             start_time=y_start_time,
-#             end_time=y_end_time
-#         ))
-#         
-#     return new_intervals
-#
-# def to_sample(position):
-#     return position * 320
-# 
-# def create_alignment_map(xcodes, ycodes, xboundaries, yboundaries, xwav, ywav, *, gap_penalty=-1, match_score=1, mismatch_score=-1):
-#     grid = compute_match_grid(xcodes, ycodes, gap_penalty=gap_penalty, match_score=match_score, mismatch_score=mismatch_score)
-#     
-#     i, j = len(xcodes), len(ycodes)
-#     
-#     # Start at the end of the audio files
-#     (x_current_sample,) = xwav.shape
-#     (y_current_sample,) = ywav.shape
-#     
-#     # Store mapping points (x_sample, y_sample)
-#     # We build it backwards, from the end, then reverse it.
-#     mapping_points = [(x_current_sample, y_current_sample)]
-# 
-#     while i > 0 and j > 0:
-#         is_gap_x = (grid[i, j] == grid[i, j-1] + gap_penalty)
-#         is_gap_y = (grid[i, j] == grid[i-1, j] + gap_penalty)
-#         
-#         x_seg_len = 0
-#         y_seg_len = 0
-# 
-#         if is_gap_y: 
-#             # Gap in y, segment from x
-#             frame_start, frame_end = xboundaries[i-1], xboundaries[i]
-#             x_seg_len = len(xwav[to_sample(frame_start):to_sample(frame_end)])
-#             i -= 1
-#         elif is_gap_x: 
-#             # Gap in x, segment from y
-#             frame_start, frame_end = yboundaries[j-1], yboundaries[j]
-#             y_seg_len = len(ywav[to_sample(frame_start):to_sample(frame_end)])
-#             j -= 1
-#         else: 
-#             # Match or substitution
-#             x_frame_start, x_frame_end = xboundaries[i-1], xboundaries[i]
-#             x_seg_len = len(xwav[to_sample(x_frame_start):to_sample(x_frame_end)])
-#             
-#             y_frame_start, y_frame_end = yboundaries[j-1], yboundaries[j]
-#             y_seg_len = len(ywav[to_sample(y_frame_start):to_sample(y_frame_end)])
-#             
-#             i -= 1
-#             j -= 1
-#             
-#         # Update our position
-#         x_current_sample -= x_seg_len
-#         y_current_sample -= y_seg_len
-#         mapping_points.append((x_current_sample, y_current_sample))
-# 
-#     # Handle remaining segments at the beginning
-#     while i > 0:
-#         frame_start, frame_end = xboundaries[i-1], xboundaries[i]
-#         x_seg_len = len(xwav[to_sample(frame_start):to_sample(frame_end)])
-#         x_current_sample -= x_seg_len
-#         mapping_points.append((x_current_sample, y_current_sample)) # y is already 0
-#         i -= 1
-#     while j > 0:
-#         frame_start, frame_end = yboundaries[j-1], yboundaries[j]
-#         y_seg_len = len(ywav[to_sample(frame_start):to_sample(frame_end)])
-#         y_current_sample -= y_seg_len
-#         mapping_points.append((x_current_sample, y_current_sample)) # x is already 0
-#         j -= 1
-# 
-#     mapping_points.reverse() # Reverse to get (0, 0) at the start
-#     
-#     # Separate into x and y arrays for np.interp
-#     # Ensure values are monotonically increasing for interpolation
-#     x_samples, y_samples = [], []
-#     last_x = -1
-#     for x, y in mapping_points:
-#         if x > last_x:
-#             x_samples.append(x)
-#             y_samples.append(y)
-#             last_x = x
-#         elif x == last_x: # If x is the same, update y to the latest value
-#             if y_samples:
-#                 y_samples[-1] = y
-#             
-#     return np.array(x_samples), np.array(y_samples)
+def build_alignments(path, learner_len, reference_len):
+    """
+    Generates a complete map from learner frames to reference frames.
+
+    This function converts an alignment path (which may contain gaps) into
+    a NumPy array where `map[learner_idx] = reference_idx`.
+
+    It handles insertions (where `reference_idx` is `None`) by mapping
+    them to the **next** valid reference frame encountered during a
+    backward traversal of the path. Insertions at the very end
+    of the learner sequence are mapped to `reference_len`.
+
+    Args:
+        path (list[tuple(int | None, int | None)]): 
+            The alignment path from an alignment algorithm. 
+            Expected as a list of `(learner_idx, reference_idx)` tuples.
+        learner_len (int): 
+            The total number of frames in the learner sequence.
+        reference_len (int): 
+            The total number of frames in the reference sequence. This is
+            used as the fill value for insertions at the end of the path.
+
+    Returns:
+        np.ndarray: 
+            A 1D NumPy array of shape `(learner_len,)`, where the value
+            at index `i` is the reference frame index that learner
+            frame `i` is mapped to.
+    """
+    filled_map = np.zeros(learner_len, dtype=int)
+    last_ref_idx = reference_len
+    for i in range(len(path)-1, -1, -1):
+        learner_idx, reference_idx = path[i]
+        if learner_idx is None:
+            continue
+        if reference_idx is None:
+            filled_map[learner_idx] = last_ref_idx
+        else:
+            filled_map[learner_idx] = reference_idx
+            last_ref_idx = reference_idx
+    return filled_map

@@ -12,7 +12,7 @@
 		tracksByKey = $bindable()
 	}: { requestedTracks: string[]; tracksByKey: Record<string, Blob | null> } = $props();
 
-	let recorder = $state();
+	let recorder: WavesurferRecorder | undefined = $state();
 	let selectedTrackRequestKey = $state<string | null>(null);
 
 	const colors = ['#ffff99', '#fb9a99', '#a6cee3', '#fdbf6f', '#cab2d6', '#b2df8a'];
@@ -206,9 +206,6 @@
 		border-radius: 4px;
 		padding: 1em;
 		align-items: center;
-	}
-	.track:not(.selecting) {
-		cursor: pointer;
 	}
 	.track.selecting {
 		cursor: pointer;

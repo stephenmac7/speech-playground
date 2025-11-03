@@ -35,3 +35,7 @@ kanade = [
 ]
 dpdp = ["numba"]
 sylber = ["sylber", "traitlets"]
+inversion = [
+    "loralib",
+    "transformers",
+]
