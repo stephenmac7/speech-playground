@@ -140,7 +140,8 @@
 <style>
     /* Scoped styles for the component */
     canvas {
-        width: 500px;
+        width: 100%;
+        max-width: 500px;
         height: auto;
         aspect-ratio: 1 / 1;
         display: block;
