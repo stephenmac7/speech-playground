@@ -14,12 +14,12 @@
 	type ComparisonMode = 'fixedRate' | 'syllable';
 
 	// Encoder config from backend (simplified flat lists)
-	type EncodersResponse = {
+	type ModelsResponse = {
 		encoders: Array<{ value: string; label: string; supports_discretization: boolean }>;
-		voice_models: Array<{ value: string; label: string }>;
+		vc_models: Array<{ value: string; label: string }>;
 	};
 
-	type EncoderOption = { value: string; label: string; supports_discretization: boolean };
+	type EncoderOption = { value: string; label: string; supports_discretization: boolean; disabled?: boolean };
 	type VoiceModelOption = { value: string; label: string };
 
 	// ---------- Props ----------
@@ -54,7 +54,7 @@
 
 	// Dynamic encoder options (fetched from backend)
 	let encoderOptions = $state<EncoderOption[]>([]);
-	let voiceModelOptions = $state<VoiceModelOption[]>([]);
+	let vcModelOptions = $state<VoiceModelOption[]>([]);
 
 	// Fixed-rate diff
 	let encoder = $state('hubert');
@@ -129,19 +129,19 @@
 			if (!active) return;
 			if (encoderOptions.length) return;
 			try {
-				const config = await getJson<EncodersResponse>(`/api/encoders`, controller.signal);
+				const config = await getJson<ModelsResponse>(`/api/models`, controller.signal);
 				encoderOptions = config.encoders;
-				voiceModelOptions = config.voice_models;
+				vcModelOptions = config.vc_models;
 
 				// Ensure current selections are valid
 				if (!encoderOptions.some((o) => o.value === encoder) && encoderOptions.length > 0) {
 					encoder = encoderOptions[0].value;
 				}
 				if (
-					!voiceModelOptions.some((o) => o.value === voiceConversionModel) &&
-					voiceModelOptions.length > 0
+					!vcModelOptions.some((o) => o.value === voiceConversionModel) &&
+					vcModelOptions.length > 0
 				) {
-					voiceConversionModel = voiceModelOptions[0].value;
+					voiceConversionModel = vcModelOptions[0].value;
 				}
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError')
@@ -311,7 +311,7 @@
 						>
 							{#if encoderOptions.length}
 								{#each encoderOptions as opt}
-									<option value={opt.value}>{opt.label}</option>
+									<option value={opt.value} disabled={opt.disabled}>{opt.label}{opt.disabled ? ' (missing files)' : ''}</option>
 								{/each}
 							{:else}
 								<!-- Fallback: HuBERT only until list loads -->
@@ -368,8 +368,8 @@
 			<label>
 				Model:
 				<select bind:value={voiceConversionModel}>
-					{#if voiceModelOptions.length}
-						{#each voiceModelOptions as opt}
+					{#if vcModelOptions.length}
+						{#each vcModelOptions as opt}
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					{:else}
