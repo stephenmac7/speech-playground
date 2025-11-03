@@ -3,7 +3,16 @@
 	import ZoomPlugin from 'wavesurfer.js/dist/plugins/zoom.js';
 	import RegionsPlugin, { type RegionParams } from 'wavesurfer.js/dist/plugins/regions.js';
 
-	let { audio, regions = [], clickableRegions = true, zoom = true, layout = 'default', compareWith = null } = $props();
+	let {
+		audio,
+		regions = [],
+		clickableRegions = true,
+		clickToPlay = true,
+		zoom = true,
+		layout = 'default',
+		compareWith = null, // TODO: move frameDuration out of this
+		currentFrame = $bindable(),
+	} = $props();
 
 	let node: HTMLElement;
 
@@ -12,7 +21,9 @@
 	let playing = $state(false);
 	let time = $state(0);
 	let duration = $state(0);
-	let dragStart : number | undefined = $state();
+	let dragStart: number | undefined = $state();
+
+	/* For comparing audio */
 	let shiftDown = $state(false);
 	let playOther = $state(false);
 
@@ -32,14 +43,18 @@
 
 	function startTimeInOther(frame: number) {
 		if (compareWith.modelBoundaries) {
-			return compareWith.modelBoundaries[compareWith.alignmentMap[frame]] * compareWith.frameDuration;
+			return (
+				compareWith.modelBoundaries[compareWith.alignmentMap[frame]] * compareWith.frameDuration
+			);
 		} else {
 			return compareWith.alignmentMap[frame] * compareWith.frameDuration;
 		}
 	}
 	function endTimeInOther(frame: number) {
 		if (compareWith.modelBoundaries) {
-			return compareWith.modelBoundaries[compareWith.alignmentMap[frame] + 1] * compareWith.frameDuration;
+			return (
+				compareWith.modelBoundaries[compareWith.alignmentMap[frame] + 1] * compareWith.frameDuration
+			);
 		} else {
 			return (compareWith.alignmentMap[frame] + 1) * compareWith.frameDuration;
 		}
@@ -76,9 +91,17 @@
 			dragStart = relativeX * duration;
 			playOther = shiftDown;
 		});
-		wavesurfer.on('interaction', () => {
-			if (!dragStart) wavesurfer.play();
-		});
+		if (clickToPlay) {
+			wavesurfer.on('interaction', () => {
+				if (!dragStart) wavesurfer.play();
+			});
+		}
+		if (compareWith && compareWith.frameDuration) {
+			wavesurfer.on('timeupdate', (currentTime) => {
+				const frame = Math.floor(currentTime / compareWith.frameDuration);
+				currentFrame = frame;
+			});
+		}
 		wavesurfer.on('dragend', (relativeX) => {
 			if (!dragStart) return;
 			const dragEnd = relativeX * duration;
@@ -86,7 +109,7 @@
 				// probably just meant to seek
 				dragStart = undefined;
 				playOther = false;
-				wavesurfer.play();
+				if (clickToPlay) wavesurfer.play();
 				return;
 			}
 			if (playOther) {

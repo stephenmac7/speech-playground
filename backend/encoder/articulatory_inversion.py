@@ -31,6 +31,9 @@ from transformers import (
 )
 from torch.nn.utils import weight_norm
 
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
 
 class WavLMEncoderLayer(nn.Module):
     def __init__(self, config, has_relative_position_bias: bool = True):
@@ -229,12 +232,14 @@ class WavLMBPWrapper(nn.Module):
         return predicted
 
 class ArticulatoryInversionEncoder:
-    def __init__(self, *, weights: Path, device: Optional[torch.device] = "cuda"):
+    def __init__(self, *, weights: Path, mu_path: Path, std_path: Path, device: Optional[torch.device] = "cuda"):
         self.model = WavLMBPWrapper()
         state_dict = torch.load(weights, map_location="cpu")
         self.model.load_state_dict(state_dict)
         self.model.to(device).eval()
 
+        self.mu = np.expand_dims(np.load(mu_path), 0)
+        self.std = np.expand_dims(np.load(std_path), 0)
         self.device = device
 
     def encode_one(self, waveform: torch.Tensor) -> np.ndarray:
@@ -257,3 +262,65 @@ class ArticulatoryInversionEncoder:
         return 0.02 # Sample as WavLM
 
 
+
+def animate_two_scatter(
+    seq1: np.ndarray,
+    seq2: np.ndarray,
+    fps: int = 30,
+    point_size: int = 80,
+    margin: float = 0.05,
+    save_path: str | None = None,
+):
+    """
+    Animate two normalized (s*std)+mu sequences of shape (L, 12).
+    Each frame has 6 (x,y) pairs: columns [0,1], [2,3], ..., [10,11].
+    """
+
+    assert seq1.shape[1] == 12 and seq2.shape[1] == 12, "Shape must be (L, 12)."
+
+    # Reshape to (L, 6, 2)
+    P1 = seq1.reshape(seq1.shape[0], 6, 2)
+    P2 = seq2.reshape(seq2.shape[0], 6, 2)
+
+    # Sync lengths (stop at min length)
+    T = min(P1.shape[0], P2.shape[0])
+    P1, P2 = P1[:T], P2[:T]
+
+    #Axis limits
+    allx = np.concatenate([P1[...,0].ravel(), P2[...,0].ravel()])
+    ally = np.concatenate([P1[...,1].ravel(), P2[...,1].ravel()])
+    xmin, xmax = allx.min(), allx.max()
+    ymin, ymax = ally.min(), ally.max()
+    xr = xmax - xmin or 1.0
+    yr = ymax - ymin or 1.0
+    xmin -= xr * margin; xmax += xr * margin
+    ymin -= yr * margin; ymax += yr * margin
+
+    fig, ax = plt.subplots()
+    ax.set_xlim(xmin, xmax); ax.set_ylim(ymin, ymax)
+    ax.set_aspect("equal", adjustable="box")
+    #if not show_axes:
+    #    ax.axis("off")
+
+    # Initial scatters
+    scat1 = ax.scatter(P1[0,:,0], P1[0,:,1], s=point_size, c="#E69F00", label="Learner",marker='x')
+    scat2 = ax.scatter(P2[0,:,0], P2[0,:,1], s=point_size, c="#009E73", label="Template")
+    ax.legend(loc="lower left")
+
+    def update(f):
+        scat1.set_offsets(P1[f])
+        scat2.set_offsets(P2[f])
+        return scat1, scat2
+    
+    anim = FuncAnimation(fig, update, frames=T, interval=1000/fps, blit=False, repeat=True)
+
+    if save_path is not None:
+        ext = save_path.lower().split(".")[-1]
+        if ext == "gif":
+            anim.save(save_path, fps=fps, writer="pillow")
+        else:
+            anim.save(save_path, fps=fps)
+    ax.set_xlabel('X Position')
+    ax.set_ylabel('Y Position')
+    plt.show()
+    return anim
