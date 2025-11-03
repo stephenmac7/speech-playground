@@ -26,13 +26,16 @@ import torchaudio
 import torchaudio.functional as F
 
 from alignment import score_frames, plot_waveform, build_alignments
+from tokenizer.kmeans import default_kmeans_model
 from encoder.articulatory_inversion import animate_two_scatter
 
 # Loads from backend/.env
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 
 # Configuration via environment variables (with conservative fallbacks)
-KMEANS_PATH = Path(os.getenv("KMEANS_PATH", "/home/smcintosh/default/dusted/kmeans_en+ja_200.joblib"))
+PARENT_DIR = Path(__file__).parent
+KMEANS_PATH = os.getenv("KMEANS_PATH")
+
 KANADE_REPO_ROOT = Path(os.getenv("KANADE_REPO_ROOT", "/home/smcintosh/kanade-tokenizer"))
 KANADE_SLUGS = {
     "kanade-12hz": "12hz",
@@ -63,9 +66,16 @@ Encoder = Literal["hubert", "kanade-12hz", "kanade-25hz", "kanade-25hz-small-voc
 # --- Lazy, cached factories (loaded on first use) ---
 @lru_cache()
 def get_kmeans_model():
+    if KMEANS_PATH is None:
+        return default_kmeans_model()
+
     import joblib
 
-    return joblib.load(KMEANS_PATH)
+    kmeans_path = Path(KMEANS_PATH)
+    if not kmeans_path.is_absolute():
+        kmeans_path = PARENT_DIR / kmeans_path
+
+    return joblib.load(kmeans_path)
 
 
 @lru_cache()
