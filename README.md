@@ -30,6 +30,8 @@ uv pip install flash-attn --no-build-isolation
 
 ```bash
 cd frontend
+cp .env.example .env
+# before running the next command, set your configuration in .env
 pnpm install
 pnpm run dev
 ```
@@ -42,9 +44,6 @@ The forced alignment tool requires a separate service. If you want it, run this 
 
 - Repo: https://github.com/stephenmac7/mfa-service
 - Expected endpoint: http://localhost:8001
-
-## Configuration
-Some values like the backend ports and the data directory can be configured at `frontend/.env`.
 
 ## Notes
 - Models and heavy dependencies are lazily loaded on first use; the first request to some endpoints may be slow.
