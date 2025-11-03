@@ -21,6 +21,7 @@ import torchaudio
 import torchaudio.functional as F
 
 from alignment import score_frames, plot_waveform, build_alignments
+from encoder.articulatory_inversion import animate_two_scatter
 
 KMEANS_PATH = Path("/home/smcintosh/default/dusted/kmeans_en+ja_200.joblib")
 KANADE_REPO_ROOT = Path("/home/smcintosh/kanade-tokenizer")
@@ -29,9 +30,14 @@ KANADE_SLUGS = {
     "kanade-25hz": "25hz",
     "kanade-25hz-small-vocab": "25hz_small_vocab",
 }
-INVERSION_WEIGHTS_PATH = Path("/home/smcintosh/default/ume_erj/checkpoints/inversion/vvn_distilled_baseplus")
+
+INVERSION_TOP = Path("/home/smcintosh/default/ume_erj/")
+INVERSION_WEIGHTS_PATH = INVERSION_TOP / "checkpoints/inversion/vvn_distilled_baseplus"
+INVERSION_MU_PATH = INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy"
+INVERSION_STD_PATH = INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy"
 
 Encoder = Literal["hubert", "kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab", "inversion"]
+
 
 # --- Lazy, cached factories (loaded on first use) ---
 @lru_cache()
@@ -57,10 +63,14 @@ def get_kanade(variant: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small
         weights_path=KANADE_REPO_ROOT / f"weights/{KANADE_SLUGS[variant]}.safetensors",
     )
 
+
 @lru_cache()
 def get_articulatory_inversion():
     from encoder.articulatory_inversion import ArticulatoryInversionEncoder
-    return ArticulatoryInversionEncoder(weights=Path(INVERSION_WEIGHTS_PATH))
+
+    return ArticulatoryInversionEncoder(
+        weights=INVERSION_WEIGHTS_PATH, mu_path=INVERSION_MU_PATH, std_path=INVERSION_STD_PATH
+    )
 
 
 @lru_cache()
@@ -230,6 +240,7 @@ def compare_endpoint(
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
     ywav = ywav.squeeze(0)
 
+    extra_results = {}
     if encoder == "hubert":
         hubert = get_hubert()
         frame_duration = hubert.frame_shift
@@ -241,14 +252,22 @@ def compare_endpoint(
             x_tokens = tok.tokenize_one(x)
             y_tokens = tok.tokenize_one(y)
             return x_tokens, y_tokens
+
     elif encoder == "inversion":
         inversion = get_articulatory_inversion()
         frame_duration = inversion.frame_shift
         x = inversion.encode_one(F.resample(xwav, xsr, inversion.sample_rate))
         y = inversion.encode_one(F.resample(ywav, ysr, inversion.sample_rate))
 
+        x_norm = x[:, :12] * inversion.std + inversion.mu
+        y_norm = y[:, :12] * inversion.std + inversion.mu
+        extra_results["articulatoryFeatures"] = [x_norm.tolist(), y_norm.tolist()]
+
         def get_tokens():
-            raise HTTPException(status_code=501, detail="Tokenization for inversion encoder is not available.")
+            raise HTTPException(
+                status_code=501, detail="Tokenization for inversion encoder is not available."
+            )
+
     else:
         kanade = get_kanade(encoder)
         frame_duration = kanade.frame_shift
@@ -275,7 +294,7 @@ def compare_endpoint(
         y_scores_sum = np.zeros(len(y))
         y_scores_count = np.zeros(len(y))
         for i, j in path:
-            alignment_map[j] = i # overwrites previous, but that's what we want
+            alignment_map[j] = i  # overwrites previous, but that's what we want
             y_scores_sum[j] += cosine_sims[i, j]
             y_scores_count[j] += 1
 
@@ -301,7 +320,12 @@ def compare_endpoint(
     # plot_waveform(ywav, sr, agreement_scores=y_positions)
     # plt.savefig("/tmp/comparison.png")
     # plt.close()
-    return {"scores": y_positions.tolist(), "frameDuration": frame_duration, "alignmentMap": alignment_map.tolist()}
+    return {
+        "scores": y_positions.tolist(),
+        "frameDuration": frame_duration,
+        "alignmentMap": alignment_map.tolist(),
+        **extra_results,
+    }
 
 
 @app.post("/compare_dpdp")

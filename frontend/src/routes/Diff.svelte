@@ -8,6 +8,7 @@
 		type Region,
 		type SylberResult
 	} from '$lib/regions';
+	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
 
 	// ---------- Types & helpers ----------
 	type ComparisonMode = 'fixedRate' | 'syllable';
@@ -53,6 +54,8 @@
 	let boundaries = $state<number[] | undefined>();
 	let modelBoundaries = $state<number[] | undefined>();
 	let alignmentMap = $state<number[] | undefined>();
+	let articulatoryFeatures = $state<number[][] | undefined>();
+	let currentFrame = $state(0);
 
 	// Threshold controls
 	let trigger = $state(0.6);
@@ -108,6 +111,7 @@
 			modelBoundaries = undefined;
 			alignmentMap = undefined;
 			sylberResult = undefined;
+			articulatoryFeatures = undefined;
 
 			const formData = new FormData();
 			formData.append('file', audioForComparison, 'recording.wav');
@@ -122,6 +126,7 @@
 						modelBoundaries: number[] | undefined;
 						frameDuration: number;
 						alignmentMap?: number[];
+						articulatoryFeatures?: number[][];
 					};
 					if (discretize && dpdp) {
 						formData.append('gamma', gamma);
@@ -135,6 +140,7 @@
 					alignmentMap = data.alignmentMap ?? [];
 					boundaries = data.boundaries;
 					modelBoundaries = data.modelBoundaries;
+					articulatoryFeatures = data.articulatoryFeatures;
 				} else {
 					const data = await postJson<SylberResult>(
 						`/api/compare_sylber`,
@@ -213,6 +219,8 @@
 			audio={convertVoice ? convertedAudio : audio}
 			regions={userRegions}
 			compareWith={{ other: modelViewer, boundaries, modelBoundaries, alignmentMap: alignmentMap, frameDuration: frameDuration }}
+			bind:currentFrame={currentFrame}
+			clickToPlay={!articulatoryFeatures}
 		/>
 		<details>
 			<summary>Debug Info</summary>
@@ -221,6 +229,15 @@
 			</p>
 		</details>
 	</div>
+	{#if articulatoryFeatures}
+		<div class="viewer-card">
+			<h3>Articulatory Features</h3>
+			<ArticulatoryFeatures
+				learnerFeatures={articulatoryFeatures[1][currentFrame]}
+				referenceFeatures={alignmentMap ? articulatoryFeatures[0][alignmentMap[currentFrame]] : undefined}
+			/>
+		</div>
+	{/if}
 
 	<div class="controls">
 		<fieldset>
