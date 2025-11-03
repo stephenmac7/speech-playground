@@ -1,7 +1,7 @@
 // Region utilities shared by routes
 // Note: DOM operations (document.createElement) occur only when these functions are called in the browser.
 
-export type Region = { start: number; end: number; content: string; color: string };
+export type Region = { id:string; start: number; end: number; content: string; color: string };
 
 export type SylberResult = {
 	scores: number[];
@@ -36,6 +36,7 @@ export function buildContinuousRegions(
         const opacity = Math.max(0, Math.min(1, shade)) * 0.8;
 
         regions.push({
+            id: `region-${startFrame}-${endFrame}`,
             start: startFrame * frameDur,
             end: endFrame * frameDur,
             color: `rgba(255, 0, 0, ${opacity})`,
@@ -79,15 +80,16 @@ export function buildCombinedSegmentRegions(
     boundaries: number[] | undefined, // size N+1
 ): Region[] {
     const regions: Region[] = [];
-    let currentRegion: { start: number; scores: number[] } | undefined;
+    let currentRegion: { startFrame: number; scores: number[] } | undefined;
     let seenGoodFrames = 0;
 
-    const createRegion = (region: { start: number; end: number; scores: number[] }) => {
+    const createRegion = (region: { startFrame: number; endFrame: number; scores: number[] }) => {
         const avg = region.scores.reduce((a, b) => a + b, 0) / region.scores.length;
         const opacity = 0.8 * (1 - avg);
         regions.push({
-            start: region.start,
-            end: region.end,
+            id: `region-${region.startFrame}-${region.endFrame}`,
+            start: boundaries ? boundaries[region.startFrame] * frameDur : region.startFrame * frameDur,
+            end: boundaries ? boundaries[region.endFrame] * frameDur : region.endFrame * frameDur,
             color: `rgba(255, 0, 0, ${opacity})`,
             content: String(avg.toFixed(2)),
         });
@@ -96,10 +98,7 @@ export function buildCombinedSegmentRegions(
     scores.forEach((score, i) => {
         if (score < 0.5) {
             if (!currentRegion) {
-                currentRegion = {
-                    start: boundaries ? boundaries[i] * frameDur : i * frameDur,
-                    scores: []
-                };
+                currentRegion = { startFrame: i, scores: [] };
             }
             currentRegion.scores.push(score);
             seenGoodFrames = 0;
@@ -111,8 +110,8 @@ export function buildCombinedSegmentRegions(
             // End the current region
             const lastBadFrame = i - seenGoodFrames;
             createRegion({
-                start: currentRegion.start,
-                end: boundaries ? boundaries[lastBadFrame] * frameDur : lastBadFrame * frameDur,
+                startFrame: currentRegion.startFrame,
+                endFrame: lastBadFrame,
                 scores: currentRegion.scores.slice(0, lastBadFrame - (i - currentRegion.scores.length))
             });
             currentRegion = undefined;
@@ -123,8 +122,8 @@ export function buildCombinedSegmentRegions(
     if (currentRegion) {
         const lastBadFrame = scores.length - seenGoodFrames;
         createRegion({
-            start: currentRegion.start,
-            end: boundaries ? boundaries[lastBadFrame] * frameDur : lastBadFrame * frameDur,
+            startFrame: currentRegion.startFrame,
+            endFrame: lastBadFrame,
             scores: currentRegion.scores.slice(0, lastBadFrame - (scores.length - currentRegion.scores.length))
         });
     }
@@ -147,9 +146,12 @@ export function buildSegmentRegions(
     scores.forEach((score, i) => {
         if (score < 0.5) {
             const opacity = 0.8 * (1 - score);
+            const startFrame = i;
+            const endFrame = i + 1;
             regions.push({
-                start: boundaries ? boundaries[i] * frameDur : i * frameDur,
-                end: boundaries ? boundaries[i + 1] * frameDur : (i + 1) * frameDur,
+                id: `region-${startFrame}-${endFrame}`,
+                start: boundaries ? boundaries[startFrame] * frameDur : startFrame * frameDur,
+                end: boundaries ? boundaries[endFrame] * frameDur : endFrame * frameDur,
                 color: `rgba(255, 0, 0, ${opacity})`,
                 content: "",
             });
@@ -163,6 +165,7 @@ export function buildSyllableRegions(result: SylberResult): Region[] {
 	result.scores.forEach((score, i) => {
 		const opacity = 0.8 * (1 - score);
 		regions.push({
+            id: "syllable-" + i,
 			start: result.ysegments[i][0],
 			end: result.ysegments[i][1],
 			color: `rgba(255, 0, 0, ${opacity})`,

@@ -1,12 +1,17 @@
 <script lang="ts">
 	import { PUBLIC_DATA_PREFIX } from '$env/static/public';
 	import { getBlob, postBlob } from '$lib/api';
+	import WavesurferRecorder from './WavesurferRecorder.svelte';
 
-	let { recorder, value = $bindable() } = $props();
+	let { recorder, value = $bindable() }: { recorder: WavesurferRecorder; value: Blob | undefined } =
+		$props();
 
+	let startingRecording = $state(false);
 	let isRecording = $state(false);
 
 	let processingAudio = $state(false);
+
+	let busy = $derived(processingAudio || startingRecording);
 
 	let apiServerFilePath = $state<string | Error>('');
 	let serverFilePath = $state('');
@@ -44,20 +49,34 @@
 			const blob = await postBlob('/api/process_audio', formData);
 			value = blob;
 		} catch (e: unknown) {
-			console.error('Error processing audio:', e);
+			alert('Error processing audio. See console for details.');
+			console.log('Error processing audio:', e);
 		}
 		processingAudio = false;
 	}
 
 	function toggleRecording() {
 		if (isRecording) {
-			recorder.stopRecording().then((blob: Blob) => {
-				handleProcessAudio(blob, true);
+			recorder.stopRecording().then((result) => {
+				const duration = result.duration;
+				if (duration < 500) {
+					alert(`Recording too short. Please record at least 500ms. Got ${duration}ms`);
+					isRecording = false;
+					return;
+				}
+				handleProcessAudio(result.blob, true);
 				isRecording = false;
 			});
 		} else {
-			recorder.startRecording();
-			isRecording = true;
+			startingRecording = true;
+			recorder
+				.startRecording()
+				.then(() => {
+					isRecording = true;
+				})
+				.finally(() => {
+					startingRecording = false;
+				});
 		}
 	}
 
@@ -94,10 +113,10 @@
 	}
 </script>
 
-<div class="audio-selector" class:busy={processingAudio}>
+<div class="audio-selector">
 	<div class="button-row">
 		<!-- Recording -->
-		<button onclick={toggleRecording}>
+		<button onclick={toggleRecording} disabled={busy}>
 			{#if isRecording}
 				<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
 					<path d="M6 6h12v12H6z" />
@@ -144,10 +163,6 @@
 		gap: 0.5em;
 	}
 
-	.audio-selector.busy {
-		cursor: wait;
-	}
-
 	.button-row {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -171,9 +186,18 @@
 		text-align: center;
 	}
 
+	button:disabled {
+		cursor: wait;
+		opacity: 0.6;
+	}
+
 	button:hover,
 	.file-input:hover {
 		background-color: var(--background-color);
+	}
+	button:disabled:hover {
+		/* prevent hover color change when disabled */
+		background-color: var(--surface-color);
 	}
 
 	.file-input input[type='file'] {
