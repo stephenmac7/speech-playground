@@ -147,12 +147,14 @@ def get_ifmdd():
 
     return IFMDD()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     with tempfile.TemporaryDirectory(prefix="speech-playground") as tmpdirname:
         global tmpdir
         tmpdir = Path(tmpdirname)
         yield
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -180,6 +182,65 @@ def parse_textgrid_to_json(textgrid_path: str) -> dict:
                 )
         response_data[tier.name] = intervals_data
     return response_data
+
+
+@app.get("/encoders")
+def encoders_endpoint():
+    """
+    Returns flat lists for UI simplicity.
+
+    {
+        "encoders": [
+            {"value": "hubert", "label": "HuBERT", "supports_discretization": true},
+            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz", "supports_discretization": true},
+            {"value": "kanade-25hz", "label": "Kanade 25 Hz", "supports_discretization": true},
+            {"value": "kanade-25hz-small-vocab", "label": "Kanade 25 Hz (Small Vocab)", "supports_discretization": true},
+            {"value": "inversion", "label": "Articulatory Inversion", "supports_discretization": false}
+        ],
+        "voice_models": [
+            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz"},
+            {"value": "kanade-25hz", "label": "Kanade 25 Hz"},
+            {"value": "kanade-25hz-small-vocab", "label": "Kanade 25 Hz (Small Vocab)"}
+        ]
+    }
+
+    It would be nice if this were dynamic, but we don't want to try loading all models on startup.
+    We exclude inversion when its files are missing.
+    """
+    extra_encoders = []
+    if (
+        INVERSION_WEIGHTS_PATH.exists()
+        and INVERSION_MU_PATH.exists()
+        and INVERSION_STD_PATH.exists()
+    ):
+        extra_encoders.append(
+            {
+                "value": "inversion",
+                "label": "Articulatory Inversion",
+                "supports_discretization": False,
+            }
+        )
+    else:
+        print("WARNING: Skipping inversion encoder in /encoders endpoint since files are missing.")
+
+    return {
+        "encoders": [
+            {"value": "hubert", "label": "HuBERT", "supports_discretization": True},
+            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz", "supports_discretization": True},
+            {"value": "kanade-25hz", "label": "Kanade 25 Hz", "supports_discretization": True},
+            {
+                "value": "kanade-25hz-small-vocab",
+                "label": "Kanade 25 Hz (Small Vocab)",
+                "supports_discretization": True,
+            },
+            *extra_encoders,
+        ],
+        "voice_models": [
+            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz"},
+            {"value": "kanade-25hz", "label": "Kanade 25 Hz"},
+            {"value": "kanade-25hz-small-vocab", "label": "Kanade 25 Hz (Small Vocab)"},
+        ],
+    }
 
 
 @app.get("/tg")
@@ -213,7 +274,7 @@ def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_filena
             raise HTTPException(status_code=400, detail="No speech detected after VAD.")
 
     if debug_save_filename is not None:
-        debug_save_path = tmpdir  / debug_save_filename
+        debug_save_path = tmpdir / debug_save_filename
         torchaudio.save(debug_save_path, ywav, sr)
 
     max_abs = ywav.abs().max() + 1e-8

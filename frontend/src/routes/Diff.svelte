@@ -1,6 +1,6 @@
 <script lang="ts">
 	import SampleViewer from './SampleViewer.svelte';
-	import { postBlob, postJson } from '$lib/api';
+	import { postBlob, postJson, getJson } from '$lib/api';
 	import {
 		buildContinuousRegions,
 		buildSegmentRegions,
@@ -12,6 +12,15 @@
 
 	// ---------- Types & helpers ----------
 	type ComparisonMode = 'fixedRate' | 'syllable';
+
+	// Encoder config from backend (simplified flat lists)
+	type EncodersResponse = {
+		encoders: Array<{ value: string; label: string; supports_discretization: boolean }>;
+		voice_models: Array<{ value: string; label: string }>;
+	};
+
+	type EncoderOption = { value: string; label: string; supports_discretization: boolean };
+	type VoiceModelOption = { value: string; label: string };
 
 	// ---------- Props ----------
 	let { tracks, active } = $props();
@@ -43,6 +52,10 @@
 	// ---------- Comparison controls ----------
 	let comparisonMode = $state<ComparisonMode>('fixedRate');
 
+	// Dynamic encoder options (fetched from backend)
+	let encoderOptions = $state<EncoderOption[]>([]);
+	let voiceModelOptions = $state<VoiceModelOption[]>([]);
+
 	// Fixed-rate diff
 	let encoder = $state('hubert');
 	let discretize = $state(true);
@@ -64,6 +77,14 @@
 	let sylberResult: SylberResult | undefined = $state();
 
 	let loading = $state(false);
+
+	// Selected encoder capabilities (for UI enable/disable)
+	const selectedEncoderOption = $derived.by(() => encoderOptions.find((o) => o.value === encoder));
+	const supportsDiscretize = $derived.by(() => {
+		// Until list loads, default to true
+		if (!encoderOptions.length) return true;
+		return selectedEncoderOption?.supports_discretization ?? true;
+	});
 
 	// ---------- Derived regions ----------
 	const modelRegions = $derived.by(() => {
@@ -99,6 +120,37 @@
 	let modelForComparison = $derived(reconstructModel ? reconstructedAudio : modelAudio);
 
 	// ---------- Effects: comparison fetch ----------
+
+	// Load encoders from backend once when active and options not loaded
+	$effect(() => {
+		const controller = new AbortController();
+
+		(async () => {
+			if (!active) return;
+			if (encoderOptions.length) return;
+			try {
+				const config = await getJson<EncodersResponse>(`/api/encoders`, controller.signal);
+				encoderOptions = config.encoders;
+				voiceModelOptions = config.voice_models;
+
+				// Ensure current selections are valid
+				if (!encoderOptions.some((o) => o.value === encoder) && encoderOptions.length > 0) {
+					encoder = encoderOptions[0].value;
+				}
+				if (
+					!voiceModelOptions.some((o) => o.value === voiceConversionModel) &&
+					voiceModelOptions.length > 0
+				) {
+					voiceConversionModel = voiceModelOptions[0].value;
+				}
+			} catch (e: unknown) {
+				if ((e as { name?: string })?.name !== 'AbortError')
+					console.error('Error fetching encoders:', e);
+			}
+		})();
+
+		return () => controller.abort();
+	});
 	$effect(() => {
 		const controller = new AbortController();
 
@@ -222,12 +274,6 @@
 			bind:currentFrame={currentFrame}
 			clickToPlay={!articulatoryFeatures}
 		/>
-		<details>
-			<summary>Debug Info</summary>
-			<p style="font-family: monospace">
-				Scores: {scores.map((score) => score.toFixed(2)).join(', ')}
-			</p>
-		</details>
 	</div>
 	{#if articulatoryFeatures}
 		<div class="viewer-card">
@@ -260,14 +306,17 @@
 						<select
 							bind:value={encoder}
 							onchange={() => {
-								if (encoder === 'inversion') discretize = false;
+								if (!supportsDiscretize) discretize = false;
 							}}
 						>
-							<option value="hubert">HuBERT</option>
-							<option value="kanade-12hz">Kanade 12.5 Hz</option>
-							<option value="kanade-25hz">Kanade 25 Hz</option>
-							<option value="kanade-25hz-small-vocab">Kanade 25 Hz (Small Vocab)</option>
-							<option value="inversion">Articulatory Inversion</option>
+							{#if encoderOptions.length}
+								{#each encoderOptions as opt}
+									<option value={opt.value}>{opt.label}</option>
+								{/each}
+							{:else}
+								<!-- Fallback: HuBERT only until list loads -->
+								<option value="hubert">HuBERT</option>
+							{/if}
 						</select>
 					</label>
 					<div class="radio-group">
@@ -275,8 +324,8 @@
 							<input type="radio" bind:group={discretize} value={false} />
 							Continuous
 						</label>
-						<label class:disabled={encoder === 'inversion'}>
-							<input type="radio" bind:group={discretize} value={true} />
+						<label class:disabled={!supportsDiscretize}>
+							<input type="radio" bind:group={discretize} value={true} disabled={!supportsDiscretize} />
 							Discrete
 						</label>
 					</div>
@@ -319,9 +368,14 @@
 			<label>
 				Model:
 				<select bind:value={voiceConversionModel}>
-					<option value="kanade-12hz">Kanade 12.5 Hz</option>
-					<option value="kanade-25hz">Kanade 25 Hz</option>
-					<option value="kanade-25hz-small-vocab">Kanade 25 Hz (Small Vocab)</option>
+					{#if voiceModelOptions.length}
+						{#each voiceModelOptions as opt}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					{:else}
+						<!-- Fallback: Kanade 25 Hz only until list loads -->
+						<option value="kanade-25hz">Kanade 25 Hz</option>
+					{/if}
 				</select>
 			</label>
 		</fieldset>
