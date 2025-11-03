@@ -37,11 +37,24 @@ PARENT_DIR = Path(__file__).parent
 KMEANS_PATH = os.getenv("KMEANS_PATH")
 
 KANADE_REPO_ROOT = Path(os.getenv("KANADE_REPO_ROOT", "/home/smcintosh/kanade-tokenizer"))
-KANADE_SLUGS = {
-    "kanade-12hz": "12hz",
-    "kanade-25hz": "25hz",
-    "kanade-25hz-small-vocab": "25hz_small_vocab",
-}
+KANADE_MODELS = [
+    {
+        "variant": "kanade-12hz",
+        "name": "Kanade 12.5 Hz",
+        "slug": "12hz",
+    },
+    {
+        "variant": "kanade-25hz",
+        "name": "Kanade 25 Hz",
+        "slug": "25hz",
+    },
+    {
+        "variant": "kanade-25hz-small-vocab",
+        "name": "Kanade 25 Hz (Small Vocab)",
+        "slug": "25hz_small_vocab",
+    }
+]
+KANADE_SLUGS = {model["variant"]: model["slug"] for model in KANADE_MODELS}
 
 INVERSION_TOP = Path(os.getenv("INVERSION_TOP", "/home/smcintosh/default/ume_erj/"))
 INVERSION_WEIGHTS_PATH = Path(
@@ -86,7 +99,7 @@ def get_hubert():
 
 
 @lru_cache()
-def get_kanade(variant: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"]):
+def get_kanade(variant: str):
     from encoder.kanade import KanadeEncoder
 
     return KanadeEncoder(
@@ -105,7 +118,7 @@ def get_articulatory_inversion():
 
 
 @lru_cache()
-def get_kanade_vocoder(variant: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"]):
+def get_kanade_vocoder(variant: str):
     from kanade_tokenizer.util import load_vocoder
 
     kanade = get_kanade(variant)
@@ -184,62 +197,43 @@ def parse_textgrid_to_json(textgrid_path: str) -> dict:
     return response_data
 
 
-@app.get("/encoders")
-def encoders_endpoint():
+@app.get("/models")
+def models_endpoint():
     """
-    Returns flat lists for UI simplicity.
-
-    {
-        "encoders": [
-            {"value": "hubert", "label": "HuBERT", "supports_discretization": true},
-            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz", "supports_discretization": true},
-            {"value": "kanade-25hz", "label": "Kanade 25 Hz", "supports_discretization": true},
-            {"value": "kanade-25hz-small-vocab", "label": "Kanade 25 Hz (Small Vocab)", "supports_discretization": true},
-            {"value": "inversion", "label": "Articulatory Inversion", "supports_discretization": false}
-        ],
-        "voice_models": [
-            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz"},
-            {"value": "kanade-25hz", "label": "Kanade 25 Hz"},
-            {"value": "kanade-25hz-small-vocab", "label": "Kanade 25 Hz (Small Vocab)"}
-        ]
-    }
-
-    It would be nice if this were dynamic, but we don't want to try loading all models on startup.
-    We exclude inversion when its files are missing.
+    Tells the frontend what models are available. Returns flat lists for UI simplicity.
     """
-    extra_encoders = []
-    if (
+    inversion_disabled = not (
         INVERSION_WEIGHTS_PATH.exists()
         and INVERSION_MU_PATH.exists()
         and INVERSION_STD_PATH.exists()
-    ):
-        extra_encoders.append(
-            {
-                "value": "inversion",
-                "label": "Articulatory Inversion",
-                "supports_discretization": False,
-            }
-        )
-    else:
-        print("WARNING: Skipping inversion encoder in /encoders endpoint since files are missing.")
+    )
+    if inversion_disabled:
+        print("WARNING: Disabling inversion encoder in /models endpoint since files are missing.")
+
+    kanade_encoders = [
+        {
+            "value": model["variant"],
+            "label": model["name"],
+            "supports_discretization": True,
+        }
+        for model in KANADE_MODELS
+    ]
+    vc_models = [
+        {"value": model["variant"], "label": model["name"]} for model in KANADE_MODELS
+    ]
 
     return {
         "encoders": [
             {"value": "hubert", "label": "HuBERT", "supports_discretization": True},
-            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz", "supports_discretization": True},
-            {"value": "kanade-25hz", "label": "Kanade 25 Hz", "supports_discretization": True},
             {
-                "value": "kanade-25hz-small-vocab",
-                "label": "Kanade 25 Hz (Small Vocab)",
-                "supports_discretization": True,
+                "value": "inversion",
+                "label": "Articulatory Inversion",
+                "supports_discretization": False,
+                "disabled": inversion_disabled,
             },
-            *extra_encoders,
+            *kanade_encoders,
         ],
-        "voice_models": [
-            {"value": "kanade-12hz", "label": "Kanade 12.5 Hz"},
-            {"value": "kanade-25hz", "label": "Kanade 25 Hz"},
-            {"value": "kanade-25hz-small-vocab", "label": "Kanade 25 Hz (Small Vocab)"},
-        ],
+        "vc_models": vc_models,
     }
 
 
@@ -528,7 +522,7 @@ def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile
 def convert_voice_endpoint(
     source: UploadFile = File(...),
     reference: UploadFile = File(...),
-    model: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"] = Form(...),
+    model: str = Form(...),
 ):
     from kanade_tokenizer.util import vocode
 
@@ -553,7 +547,7 @@ def convert_voice_endpoint(
 @app.post("/reconstruct")
 def reconstruct_endpoint(
     file: UploadFile = File(...),
-    model: Literal["kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab"] = Form(...),
+    model: str = Form(...),
 ):
     from kanade_tokenizer.util import vocode
 
