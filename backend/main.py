@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Literal
 
@@ -5,11 +6,15 @@ from fastapi import FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
 from pathlib import Path
+import os
+
+from dotenv import load_dotenv
 
 import io
 import numpy as np
 import tgt
 import soundfile
+import tempfile
 import torch
 import torchaudio
 
@@ -23,18 +28,34 @@ import torchaudio.functional as F
 from alignment import score_frames, plot_waveform, build_alignments
 from encoder.articulatory_inversion import animate_two_scatter
 
-KMEANS_PATH = Path("/home/smcintosh/default/dusted/kmeans_en+ja_200.joblib")
-KANADE_REPO_ROOT = Path("/home/smcintosh/kanade-tokenizer")
+# Loads from backend/.env
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
+
+# Configuration via environment variables (with conservative fallbacks)
+KMEANS_PATH = Path(os.getenv("KMEANS_PATH", "/home/smcintosh/default/dusted/kmeans_en+ja_200.joblib"))
+KANADE_REPO_ROOT = Path(os.getenv("KANADE_REPO_ROOT", "/home/smcintosh/kanade-tokenizer"))
 KANADE_SLUGS = {
     "kanade-12hz": "12hz",
     "kanade-25hz": "25hz",
     "kanade-25hz-small-vocab": "25hz_small_vocab",
 }
 
-INVERSION_TOP = Path("/home/smcintosh/default/ume_erj/")
-INVERSION_WEIGHTS_PATH = INVERSION_TOP / "checkpoints/inversion/vvn_distilled_baseplus"
-INVERSION_MU_PATH = INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy"
-INVERSION_STD_PATH = INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy"
+INVERSION_TOP = Path(os.getenv("INVERSION_TOP", "/home/smcintosh/default/ume_erj/"))
+INVERSION_WEIGHTS_PATH = Path(
+    os.getenv(
+        "INVERSION_WEIGHTS_PATH",
+        str(INVERSION_TOP / "checkpoints/inversion/vvn_distilled_baseplus"),
+    )
+)
+INVERSION_MU_PATH = Path(
+    os.getenv("INVERSION_MU_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy"))
+)
+INVERSION_STD_PATH = Path(
+    os.getenv("INVERSION_STD_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy"))
+)
+
+# Base directory for /data endpoint
+DATA_ROOT = Path(os.getenv("DATA_ROOT", "/work/smcintosh/data"))
 
 Encoder = Literal["hubert", "kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab", "inversion"]
 
@@ -116,8 +137,14 @@ def get_ifmdd():
 
     return IFMDD()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    with tempfile.TemporaryDirectory(prefix="speech-playground") as tmpdirname:
+        global tmpdir
+        tmpdir = Path(tmpdirname)
+        yield
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 
 def parse_textgrid_to_json(textgrid_path: str) -> dict:
@@ -167,7 +194,7 @@ def streaming_response_of_audio(waveform: torch.Tensor, sample_rate: int) -> Str
     return StreamingResponse(buffer, media_type="audio/wav")
 
 
-def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_path: str = None):
+def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_filename: str = None):
     ywav, sr = torchaudio.load_with_torchcodec(file)
 
     if apply_vad:
@@ -175,7 +202,8 @@ def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_path: 
         if ywav.shape[1] == 0:
             raise HTTPException(status_code=400, detail="No speech detected after VAD.")
 
-    if debug_save_path is not None:
+    if debug_save_filename is not None:
+        debug_save_path = tmpdir  / debug_save_filename
         torchaudio.save(debug_save_path, ywav, sr)
 
     max_abs = ywav.abs().max() + 1e-8
@@ -188,7 +216,7 @@ def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_path: 
 @app.post("/process_audio")
 def process_audio_endpoint(file: UploadFile = File(...), apply_vad: bool = Form(True)):
     return streaming_response_of_audio_file(
-        file.file, apply_vad=apply_vad, debug_save_path="/tmp/uploaded.wav"
+        file.file, apply_vad=apply_vad, debug_save_filename="recorded_audio.wav"
     )
 
 
@@ -198,7 +226,7 @@ def process_audio_endpoint(file: UploadFile = File(...), apply_vad: bool = Form(
 def data_endpoint(filename: str):
     if not filename.endswith(".wav"):
         raise HTTPException(status_code=404, detail="Only .wav files are supported.")
-    parent = Path("/work/smcintosh/data")
+    parent = DATA_ROOT
     path = (parent / filename).resolve()
     if not str(path).startswith(str(parent.resolve())):
         raise HTTPException(status_code=403, detail="Access denied.")

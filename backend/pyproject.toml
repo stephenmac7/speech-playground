@@ -16,6 +16,7 @@ dependencies = [
     "dtaidistance>=2.3.13",
     "joblib>=1.5.2",
     "torchcodec==0.7",
+    "python-dotenv>=1.0.1",
 ]
 
 [project.optional-dependencies]
