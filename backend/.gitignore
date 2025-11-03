@@ -15,7 +15,18 @@ uv.lock
 # This is a library
 .python-version
 
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Custom
+models/
+scratch/
+
 # Temporary
 kanade_tokenizer
 pretrained_models/
 exp_l2arctic/
+
