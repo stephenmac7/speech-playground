@@ -8,19 +8,19 @@ Recommended prerequisites:
 - [uv](https://docs.astral.sh/uv/)
 - [pnpm](https://pnpm.io/)
 
-You'll also need to link in Kanade for now:
-```bash
-ln -s /path/to/kanade_tokenizer backend/
-```
-
 ### 1) Run the backend (FastAPI)
 
 ```bash
 cd backend
-uv run fastapi dev main.py
+uv run --all-extras fastapi dev main.py
 
-# optional: load all extras at startup
-# uv run --all-extras fastapi dev main.py
+# optional: skip --all-extras to use only some functionality
+```
+
+For Kanade with Flash Attention, you can optionally also run:
+```bash
+uv pip install ninja
+uv pip install flash-attn --no-build-isolation
 ```
 
 - API: http://localhost:8000

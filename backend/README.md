@@ -9,10 +9,10 @@ This can be used along with the Svelte frontend (see parent directory) to create
 Run the development server using:
 
 ```bash
-uv run fastapi dev main.py
+uv run --all-extras fastapi dev main.py
 ```
 
-Add the `--all-extras` flag if you want to be able to use all features (see [below](#lazy-loaded-modules)).
+Skip the `--all-extras` flag if you want only use some features (see [below](#lazy-loaded-modules)).
 
 The API will be available at `http://localhost:8000` with interactive documentation at `http://localhost:8000/docs`.
 
