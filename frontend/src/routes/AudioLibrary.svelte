@@ -108,7 +108,7 @@
 			style:--selection-color={colorOfString(key)}
 			onclick={() => selectTrackRequest(key)}
 		>
-			{key}
+			Set {key}
 		</button>
 	{/each}
 </div>

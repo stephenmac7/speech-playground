@@ -10,6 +10,7 @@
 		type SylberResult
 	} from '$lib/regions';
 	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
+	import Tooltip from '$lib/Tooltip.svelte';
 
 	// ---------- Types & helpers ----------
 	type ComparisonMode = 'fixedRate' | 'syllable';
@@ -261,6 +262,9 @@
 
 <div class={loading ? 'waiting' : ''}>
 	<div class="viewer-card">
+		<div class="viewer-header">
+			<h3>Model Audio</h3>
+		</div>
 		<SampleViewer
 			audio={reconstructModel ? reconstructedAudio : modelAudio}
 			regions={modelRegions}
@@ -268,10 +272,30 @@
 		/>
 	</div>
 	<div class="viewer-card">
+		<div class="viewer-header">
+			<h3>Learner Audio</h3>
+			<Tooltip>
+				<b>Playback controls</b>
+				<ul class="tooltip-list">
+					<li>Drag on waveform to play a selection.</li>
+					<li>Click on a region to play it.</li>
+					<li>
+						Hold Shift while clicking a region or dragging to play the corresponding audio in the
+						other track.
+					</li>
+				</ul>
+			</Tooltip>
+		</div>
 		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}
 			regions={userRegions}
-			compareWith={{ other: modelViewer, boundaries, modelBoundaries, alignmentMap: alignmentMap, frameDuration: frameDuration }}
+			compareWith={{
+				other: modelViewer,
+				boundaries,
+				modelBoundaries,
+				alignmentMap: alignmentMap,
+				frameDuration: frameDuration
+			}}
 			bind:currentFrame={currentFrame}
 			clickToPlay={!articulatoryFeatures}
 		/>
@@ -384,6 +408,11 @@
 </div>
 
 <style>
+	.tooltip-list {
+		margin: 4px 0 0 0;
+		padding-left: 20px;
+		list-style-type: '- ';
+	}
 	.controls {
 		display: flex;
 		flex-wrap: wrap;
@@ -429,5 +458,16 @@
 		border: 1px solid var(--border-color);
 		padding: 1rem;
 		margin-bottom: 1rem;
+	}
+
+	.viewer-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+
+	.viewer-header h3 {
+		margin: 0;
 	}
 </style>
