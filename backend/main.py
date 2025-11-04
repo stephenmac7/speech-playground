@@ -65,7 +65,7 @@ else:
     INVERSION_WEIGHTS_PATH = Path(
         os.getenv(
             "INVERSION_WEIGHTS_PATH",
-            str(INVERSION_TOP / "checkpoints/inversion/vvn_distilled_baseplus"),
+            str(INVERSION_TOP / "checkpoints/inversion/wavlm_baseplus_inversion_distilled"),
         )
     )
     INVERSION_MU_PATH = Path(
