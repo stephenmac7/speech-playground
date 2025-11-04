@@ -221,6 +221,7 @@
 
 	export function play(start?: number, end?: number) {
 		if (wavesurfer) {
+			if (start && start >= duration) return;
 			wavesurfer.play(start, end);
 		}
 	}

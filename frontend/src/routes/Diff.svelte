@@ -358,8 +358,21 @@
 								Combine Regions:
 								<input type="checkbox" bind:checked={combineRegions} />
 							</label>
-							<label>
-								DPDP:
+							<label class="label-with-tooltip">
+								<span>DPDP:</span>
+								<Tooltip align="left">
+									Dynamic programming method that produces coarser speech units.
+									<br /><br />
+									<i>Word Segmentation on Discovered Phone Units With Dynamic Programming and
+									Self-Supervised Scoring</i> (Herman Kamper).
+									<a
+										href="https://doi.org/10.1109/TASLP.2022.3229264"
+										target="_blank"
+										rel="noopener noreferrer"
+									>
+										doi:10.1109/TASLP.2022.3229264
+									</a>
+								</Tooltip>
 								<input type="checkbox" bind:checked={dpdp} />
 							</label>
 							<label class:disabled={!dpdp}>
@@ -385,7 +398,16 @@
 		</fieldset>
 
 		<fieldset>
-			<legend>Voice Conversion</legend>
+			<legend class="legend-with-tooltip">
+				<span>Voice Conversion</span>
+				<Tooltip>
+					When enabled, the learner track is converted to the model's voice.
+					<br /><br />
+					"Reconstruct Model" will process the model's audio through the voice conversion model. This
+					can be useful to create a more fair comparison, by accounting for any artifacts introduced
+					by the voice conversion model itself.
+				</Tooltip>
+			</legend>
 			<label> Enabled: <input type="checkbox" bind:checked={convertVoice} /> </label>
 			<label> Reconstruct Model: <input type="checkbox" bind:checked={reconstructModel} /> </label>
 			<label>
@@ -470,5 +492,12 @@
 
 	.viewer-header h3 {
 		margin: 0;
+	}
+
+	.legend-with-tooltip,
+	.label-with-tooltip {
+		display: flex;
+		align-items: center;
+		gap: 0.5em;
 	}
 </style>
