@@ -58,7 +58,7 @@
 
 	// Fixed-rate diff
 	let encoder = $state('hubert');
-	let discretize = $state(true);
+	let discretize = $state(false);
 	let combineRegions = $state(true);
 	let dpdp = $state(true);
 	let gamma = $state('0.2');
@@ -311,7 +311,7 @@
 						>
 							{#if encoderOptions.length}
 								{#each encoderOptions as opt}
-									<option value={opt.value} disabled={opt.disabled}>{opt.label}{opt.disabled ? ' (missing files)' : ''}</option>
+									<option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
 								{/each}
 							{:else}
 								<!-- Fallback: HuBERT only until list loads -->

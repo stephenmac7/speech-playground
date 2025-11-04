@@ -13,7 +13,6 @@ Recommended prerequisites:
 ```bash
 cd backend
 cp .env.example .env
-# edit .env and set the paths for your environment
 uv run --all-extras fastapi dev main.py
 
 # optional: skip --all-extras to use only some functionality
@@ -33,7 +32,6 @@ uv pip install flash-attn --no-build-isolation
 ```bash
 cd frontend
 cp .env.example .env
-# before running the next command, set your configuration in .env
 pnpm install
 pnpm run dev
 ```
@@ -56,21 +54,6 @@ This project uses lazy loading for various speech processing models and encoders
 - Some imports will fail until you install the necessary optional dependencies for the encoder/tokenizer you want to use
 
 Note on Kanade: Most dependencies are listed properly in the `kanade` group, but you'll need to install flash-attn by hand. See the Kanade repository instructions; a common sequence is shown above.
-
-## Backend configuration
-
-Backend settings are configured via environment variables loaded from `backend/.env` (copy from `backend/.env.example`). Set these as appropriate:
-
-- KMEANS_PATH: Path to a pre-trained K-Means model (e.g., `kmeans_en+ja_200.joblib`)
-- KANADE_REPO_ROOT: Root directory of the Kanade tokenizer repository (must contain `config/model/<slug>.yaml` and matching `weights/<slug>.safetensors`)
-- INVERSION_TOP: Base directory used to derive paths for the articulatory inversion encoder
-	- Optional overrides (otherwise derived from INVERSION_TOP):
-		- INVERSION_WEIGHTS_PATH
-		- INVERSION_MU_PATH
-		- INVERSION_STD_PATH
-- DATA_ROOT: Directory served by the `/data/{filename}` endpoint (restricted to `.wav` files)
-
-Tip: If you prefer not to change paths, you can create symlinks so the expected directories resolve in your environment.
 
 ## Deploying
 (Instructions from Svelte -- have not tried this yet)

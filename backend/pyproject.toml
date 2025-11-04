@@ -39,4 +39,4 @@ inversion = [
 ]
 
 [tool.uv.sources]
-kanade-tokenizer = { git = "git+ssh://git@github.com/frothywater/kanade-tokenizer.git" }
+kanade-tokenizer = { git = "https://github.com/frothywater/kanade-tokenizer" }

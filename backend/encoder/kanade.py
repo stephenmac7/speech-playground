@@ -11,13 +11,10 @@ from kanade_tokenizer.util import load_audio
 
 class KanadeEncoder:
     def __init__(
-        self, *, config_path: Path | str, weights_path: Path | str, device: Optional[torch.device] = "cuda"
+        self, *, device: Optional[torch.device] = "cuda", **kwargs
     ):
         self.device = device
-        # TODO: update kanade to accept path objects
-        self.model = (
-            KanadeModel.from_pretrained(str(config_path), weights_path=str(weights_path)).eval().to(device)
-        )
+        self.model = KanadeModel.from_pretrained(**kwargs).eval().to(device)
 
     def load_audio(self, filepath: str) -> torch.Tensor:
         return load_audio(filepath, sample_rate=self.model.config.sample_rate).to(self.device)
