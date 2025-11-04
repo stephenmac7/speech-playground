@@ -71,6 +71,15 @@
 		opacity: 1;
 	}
 
+	.tooltip-container::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 100%;
+		height: 5px; /* Small buffer */
+	}
+
 	.help-icon {
 		cursor: help;
 		color: var(--foreground-color);
