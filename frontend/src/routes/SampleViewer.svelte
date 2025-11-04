@@ -265,6 +265,8 @@
 		display: flex;
 		align-items: center;
 		gap: 1em;
+		contain: paint;
+		position: relative;
 	}
 
 	button {
