@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { PUBLIC_DATA_PREFIX } from '$env/static/public';
 	import { getBlob, postBlob } from '$lib/api';
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 
@@ -94,15 +93,10 @@
 	}
 
 	function setServerFilePath() {
-		if (serverFilePath.startsWith(PUBLIC_DATA_PREFIX)) {
-			const nextValue = serverFilePath.substring(PUBLIC_DATA_PREFIX.length);
-			if (nextValue == apiServerFilePath) {
-				value = serverAudio; // just set the audio to the existing server audio
-			} else {
-				apiServerFilePath = nextValue; // will trigger fetch
-			}
+		if (serverFilePath == apiServerFilePath) {
+			value = serverAudio; // just set the audio to the existing server audio
 		} else {
-			apiServerFilePath = Error(`File must be in ${PUBLIC_DATA_PREFIX}`);
+			apiServerFilePath = serverFilePath; // will trigger fetch
 		}
 	}
 
@@ -145,7 +139,6 @@
 				id="server-file-input"
 				type="text"
 				bind:value={serverFilePath}
-				placeholder="{PUBLIC_DATA_PREFIX}..."
 				onkeydown={handleKeydown}
 			/>
 			<button onclick={setServerFilePath}>Set</button>

@@ -41,22 +41,32 @@
 		shiftDown = false;
 	}
 
-	function startTimeInOther(frame: number) {
+	function startTimeInOther(segment: number) {
 		if (compareWith.modelBoundaries) {
 			return (
-				compareWith.modelBoundaries[compareWith.alignmentMap[frame]] * compareWith.frameDuration
+				compareWith.modelBoundaries[compareWith.alignmentMap[segment]] * compareWith.frameDuration
 			);
 		} else {
-			return compareWith.alignmentMap[frame] * compareWith.frameDuration;
+			return compareWith.alignmentMap[segment] * compareWith.frameDuration;
 		}
 	}
-	function endTimeInOther(frame: number) {
+	// segment is exclusive
+	function endTimeInOther(segment: number) {
+		const lastIncludedSegment = segment - 1;
+		if (lastIncludedSegment >= compareWith.alignmentMap.length) {
+			return null;
+		}
+		const lastIncludedOtherSegment = compareWith.alignmentMap[lastIncludedSegment];
 		if (compareWith.modelBoundaries) {
+			// The alignment map can point to the the end of the track (insertion by the learner at the end of the track)
+			if (lastIncludedOtherSegment + 1 >= compareWith.modelBoundaries.length) {
+				return null;
+			}
 			return (
-				compareWith.modelBoundaries[compareWith.alignmentMap[frame] + 1] * compareWith.frameDuration
+				compareWith.modelBoundaries[lastIncludedOtherSegment + 1] * compareWith.frameDuration
 			);
 		} else {
-			return (compareWith.alignmentMap[frame] + 1) * compareWith.frameDuration;
+			return (lastIncludedOtherSegment + 1) * compareWith.frameDuration;
 		}
 	}
 
@@ -116,32 +126,35 @@
 				if (compareWith && compareWith.alignmentMap) {
 					const rawStartFrame = Math.floor(dragStart / compareWith.frameDuration);
 					const rawEndFrame = Math.ceil(dragEnd / compareWith.frameDuration);
-					let startFrame: number, endFrame: number;
+					let startSegment: number, endSegment: number;
 					if (compareWith.boundaries && compareWith.modelBoundaries) {
-						// snap to region boundaries, without losing any content
-						startFrame = 0;
-						for (let i = 0; i < compareWith.boundaries.length; i++) {
-							if (compareWith.boundaries[i] == rawStartFrame) {
-								startFrame = i;
-								break;
-							} else if (compareWith.boundaries[i] > rawStartFrame) {
-								startFrame = i === 0 ? 0 : i - 1;
+						const numSegments = compareWith.boundaries.length - 1;
+						// Find inclusive segment index `startIdx`
+						// Find the last segment `i` whose start time is <= the rawStartFrame
+						startSegment = 0;
+						for (let i = numSegments - 1; i >= 0; i--) {
+							if (compareWith.boundaries[i] <= rawStartFrame) {
+								startSegment = i;
 								break;
 							}
 						}
-						endFrame = compareWith.boundaries[compareWith.boundaries.length - 1];
+
+						// Find exclusive segment index `endSegment`
+						// Find the first boundary index `i` whose start time is >= the rawEndFrame
+						endSegment = numSegments; // Default to exclusive end (N)
 						for (let i = 0; i < compareWith.boundaries.length; i++) {
 							if (compareWith.boundaries[i] >= rawEndFrame) {
-								endFrame = i;
+								endSegment = i;
 								break;
 							}
 						}
+						// If drag is past the end, loop finishes and endSegment remains N, which is correct.
 					} else {
-						startFrame = rawStartFrame;
-						endFrame = rawEndFrame;
+						startSegment = rawStartFrame;
+						endSegment = rawEndFrame;
 					}
-					const otherStartTime = startTimeInOther(startFrame);
-					const otherEndTime = endTimeInOther(endFrame);
+					const otherStartTime = startTimeInOther(startSegment);
+					const otherEndTime = endTimeInOther(endSegment);
 					compareWith.other.play(otherStartTime, otherEndTime);
 				}
 			} else {

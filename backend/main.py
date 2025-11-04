@@ -11,6 +11,7 @@ import os
 from dotenv import load_dotenv
 
 import io
+import json
 import numpy as np
 import tgt
 import soundfile
@@ -32,59 +33,62 @@ from encoder.articulatory_inversion import animate_two_scatter
 # Loads from backend/.env
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 
-# Configuration via environment variables (with conservative fallbacks)
+# Load configuration via environment variables
 PARENT_DIR = Path(__file__).parent
-KMEANS_PATH = os.getenv("KMEANS_PATH")
 
-KANADE_REPO_ROOT = Path(os.getenv("KANADE_REPO_ROOT", "/home/smcintosh/kanade-tokenizer"))
-KANADE_MODELS = [
-    {
-        "variant": "kanade-12hz",
-        "name": "Kanade 12.5 Hz",
-        "slug": "12hz",
-    },
-    {
-        "variant": "kanade-25hz",
-        "name": "Kanade 25 Hz",
-        "slug": "25hz",
-    },
-    {
-        "variant": "kanade-25hz-small-vocab",
-        "name": "Kanade 25 Hz (Small Vocab)",
-        "slug": "25hz_small_vocab",
-    }
-]
-KANADE_SLUGS = {model["variant"]: model["slug"] for model in KANADE_MODELS}
+HUBERT_KMEANS_PATH = os.getenv("HUBERT_KMEANS_PATH")
+if HUBERT_KMEANS_PATH is not None:
+    HUBERT_KMEANS_PATH = Path(HUBERT_KMEANS_PATH)
+    if not HUBERT_KMEANS_PATH.is_absolute():
+        HUBERT_KMEANS_PATH = PARENT_DIR / HUBERT_KMEANS_PATH
 
-INVERSION_TOP = Path(os.getenv("INVERSION_TOP", "/home/smcintosh/default/ume_erj/"))
-INVERSION_WEIGHTS_PATH = Path(
-    os.getenv(
-        "INVERSION_WEIGHTS_PATH",
-        str(INVERSION_TOP / "checkpoints/inversion/vvn_distilled_baseplus"),
+KANADE_MODELS_PATH = Path(os.getenv("KANADE_MODELS_PATH"))
+if KANADE_MODELS_PATH is None:
+    raise ValueError("KANADE_MODELS_PATH environment variable must be set. Copy backend/.env.example to backend/.env.")
+if not KANADE_MODELS_PATH.is_absolute():
+    KANADE_MODELS_PATH = PARENT_DIR / KANADE_MODELS_PATH
+with open(KANADE_MODELS_PATH, "r") as f:
+    KANADE_MODELS = json.load(f)
+KANADE_VARIANTS = {model["variant"]: model for model in KANADE_MODELS}
+
+INVERSION_TOP = os.getenv("INVERSION_TOP")
+if INVERSION_TOP is None:
+    INVERSION_WEIGHTS_PATH = None
+    INVERSION_MU_PATH = None
+    INVERSION_STD_PATH = None
+else:
+    if not Path(INVERSION_TOP).is_absolute():
+        INVERSION_TOP = PARENT_DIR / INVERSION_TOP
+    if not Path(INVERSION_TOP).exists():
+        raise ValueError(f"INVERSION_TOP directory '{INVERSION_TOP}' does not exist.")
+    INVERSION_TOP = Path(INVERSION_TOP)
+    INVERSION_WEIGHTS_PATH = Path(
+        os.getenv(
+            "INVERSION_WEIGHTS_PATH",
+            str(INVERSION_TOP / "checkpoints/inversion/vvn_distilled_baseplus"),
+        )
     )
-)
-INVERSION_MU_PATH = Path(
-    os.getenv("INVERSION_MU_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy"))
-)
-INVERSION_STD_PATH = Path(
-    os.getenv("INVERSION_STD_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy"))
-)
+    INVERSION_MU_PATH = Path(
+        os.getenv("INVERSION_MU_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy"))
+    )
+    INVERSION_STD_PATH = Path(
+        os.getenv("INVERSION_STD_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy"))
+    )
 
 # Base directory for /data endpoint
-DATA_ROOT = Path(os.getenv("DATA_ROOT", "/work/smcintosh/data"))
-
-Encoder = Literal["hubert", "kanade-12hz", "kanade-25hz", "kanade-25hz-small-vocab", "inversion"]
-
+DATA_ROOT = Path(os.getenv("DATA_ROOT"))
 
 # --- Lazy, cached factories (loaded on first use) ---
 @lru_cache()
 def get_kmeans_model():
-    if KMEANS_PATH is None:
+    if HUBERT_KMEANS_PATH is None:
+        print("Loading default KMeans model for HuBERT")
         return default_kmeans_model()
 
     import joblib
 
-    kmeans_path = Path(KMEANS_PATH)
+    print("Loading custom KMeans model for HuBERT from", HUBERT_KMEANS_PATH)
+    kmeans_path = Path(HUBERT_KMEANS_PATH)
     if not kmeans_path.is_absolute():
         kmeans_path = PARENT_DIR / kmeans_path
 
@@ -102,10 +106,8 @@ def get_hubert():
 def get_kanade(variant: str):
     from encoder.kanade import KanadeEncoder
 
-    return KanadeEncoder(
-        config_path=KANADE_REPO_ROOT / f"config/model/{KANADE_SLUGS[variant]}.yaml",
-        weights_path=KANADE_REPO_ROOT / f"weights/{KANADE_SLUGS[variant]}.safetensors",
-    )
+    model = KANADE_VARIANTS[variant]
+    return KanadeEncoder(**model["source"])
 
 
 @lru_cache()
@@ -127,14 +129,14 @@ def get_kanade_vocoder(variant: str):
 
 
 @lru_cache()
-def get_kmeans_tokenizer():
+def get_hubert_kmeans_tokenizer():
     from tokenizer.kmeans import KMeansTokenizer
 
     return KMeansTokenizer(kmeans=get_kmeans_model())
 
 
 @lru_cache()
-def get_dpdp_tokenizer(encoder: Encoder):
+def get_dpdp_tokenizer(encoder: str):
     from tokenizer.dpdp import DPDPTokenizer
 
     if encoder == "hubert":
@@ -202,12 +204,7 @@ def models_endpoint():
     """
     Tells the frontend what models are available. Returns flat lists for UI simplicity.
     """
-    inversion_disabled = not (
-        INVERSION_WEIGHTS_PATH.exists()
-        and INVERSION_MU_PATH.exists()
-        and INVERSION_STD_PATH.exists()
-    )
-    if inversion_disabled:
+    if INVERSION_TOP is None:
         print("WARNING: Disabling inversion encoder in /models endpoint since files are missing.")
 
     kanade_encoders = [
@@ -229,7 +226,7 @@ def models_endpoint():
                 "value": "inversion",
                 "label": "Articulatory Inversion",
                 "supports_discretization": False,
-                "disabled": inversion_disabled,
+                "disabled": INVERSION_TOP is None,
             },
             *kanade_encoders,
         ],
@@ -325,7 +322,7 @@ def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
 def compare_endpoint(
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
-    encoder: Encoder = Form(...),
+    encoder: str = Form(...),
     discretize: bool = Form(...),
 ):
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
@@ -341,7 +338,7 @@ def compare_endpoint(
         y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate))
 
         def get_tokens():
-            tok = get_kmeans_tokenizer()
+            tok = get_hubert_kmeans_tokenizer()
             x_tokens = tok.tokenize_one(x)
             y_tokens = tok.tokenize_one(y)
             return x_tokens, y_tokens
@@ -425,7 +422,7 @@ def compare_endpoint(
 def compare_dpdp_endpoint(
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
-    encoder: Encoder = Form(...),
+    encoder: str = Form(...),
     gamma: float = Form(...),
 ):
     if encoder == "inversion":

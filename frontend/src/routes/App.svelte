@@ -5,7 +5,7 @@
 	import KeepAlive from './KeepAlive.svelte';
 	import AudioLibrary from './AudioLibrary.svelte';
 
-	let tools = $state(['forced_alignment']);
+	let tools = $state(['forced_alignment', 'diff']);
 
 	const toolOptions = [
 		{ id: 'forced_alignment', label: 'Forced Alignment' },
