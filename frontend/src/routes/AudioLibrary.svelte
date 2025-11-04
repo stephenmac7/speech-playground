@@ -3,6 +3,7 @@
 	import SampleViewer from './SampleViewer.svelte';
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 	import { untrack } from 'svelte';
+	import { reportError } from '$lib/errors';
 
 	import { db } from '$lib/db';
 	import { liveQuery } from 'dexie';
@@ -48,7 +49,7 @@
 		try {
 			await db.audio_tracks.add({ keys: [] });
 		} catch (error) {
-			console.error('Error adding track to database:', error);
+			reportError('Error adding track to database:', error);
 		}
 	}
 

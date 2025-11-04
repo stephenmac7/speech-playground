@@ -1,6 +1,7 @@
 // src/lib/db.ts
 import { PUBLIC_EXAMPLE_PATH, PUBLIC_EXAMPLE_MODEL_PATH } from '$env/static/public';
 import { getBlob } from '$lib/api';
+import { reportError } from '$lib/errors';
 import Dexie, { type EntityTable } from 'dexie';
 
 interface AudioTrack {
@@ -33,7 +34,7 @@ db.on('ready', async (db) => {
 				]);
 				console.log('Done populating.');
 			} catch (e) {
-				console.error('Error fetching or populating examples:', e);
+				reportError('Error fetching or populating examples.', e);
 			}
 		}
 	});

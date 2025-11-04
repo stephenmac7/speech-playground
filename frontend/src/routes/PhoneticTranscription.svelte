@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SampleViewer from './SampleViewer.svelte';
 	import { postJson } from '$lib/api';
+	import { reportError } from '$lib/errors';
 
 	let { tracks, active } = $props();
 
@@ -30,7 +31,7 @@
 				regions = result.intervals;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError') {
-					console.error('Error fetching intervals:', e);
+					reportError('Error fetching intervals.', e);
 				}
 			} finally {
 				loading = false;

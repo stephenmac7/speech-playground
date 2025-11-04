@@ -2,6 +2,7 @@
 	import { PUBLIC_EXAMPLE_TRANSCRIPT } from '$env/static/public';
 	import SampleViewer from './SampleViewer.svelte';
 	import { postJson } from '$lib/api';
+	import { reportError } from '$lib/errors';
 
 	let { tracks, active } = $props();
 
@@ -39,7 +40,7 @@
 				alignment = result;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError') {
-					console.error('Error fetching intervals:', e);
+					reportError('Error fetching intervals.', e);
 					alignment = {};
 				}
 			} finally {

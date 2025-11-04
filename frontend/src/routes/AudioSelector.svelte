@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getBlob, postBlob } from '$lib/api';
+	import { reportError } from '$lib/errors';
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 
 	let { recorder, value = $bindable() }: { recorder: WavesurferRecorder; value: Blob | undefined } =
@@ -29,7 +30,7 @@
 				value = serverAudio;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError') {
-					console.error(`Error fetching server audio:`, e);
+					reportError(`Error fetching server audio.`, e);
 				}
 			}
 		})();
@@ -48,8 +49,7 @@
 			const blob = await postBlob('/api/process_audio', formData);
 			value = blob;
 		} catch (e: unknown) {
-			alert('Error processing audio. See console for details.');
-			console.log('Error processing audio:', e);
+			reportError('Error processing audio.', e);
 		}
 		processingAudio = false;
 	}
@@ -93,7 +93,7 @@
 	}
 
 	function setServerFilePath() {
-		if (serverFilePath == apiServerFilePath) {
+		if (serverFilePath == apiServerFilePath && serverAudio) {
 			value = serverAudio; // just set the audio to the existing server audio
 		} else {
 			apiServerFilePath = serverFilePath; // will trigger fetch
