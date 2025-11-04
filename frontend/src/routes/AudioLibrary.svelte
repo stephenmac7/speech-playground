@@ -98,6 +98,8 @@
 	}
 </script>
 
+<h3>Audio Library</h3>
+
 <WavesurferRecorder bind:this={recorder} />
 
 <div class="requested-tracks">
