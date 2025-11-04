@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SampleViewer from './SampleViewer.svelte';
 	import { postBlob, postJson, getJson } from '$lib/api';
+	import { reportError } from '$lib/errors';
 	import {
 		buildContinuousRegions,
 		buildSegmentRegions,
@@ -145,7 +146,7 @@
 				}
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError')
-					console.error('Error fetching encoders:', e);
+					reportError('Error fetching encoders.', e);
 			}
 		})();
 
@@ -203,7 +204,7 @@
 				}
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError')
-					console.error('Error fetching diff:', e);
+					reportError('Error fetching diff.', e);
 			} finally {
 				loading = false;
 			}
@@ -228,7 +229,7 @@
 				convertedAudio = blob;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError')
-					console.error('Error fetching converted voice:', e);
+					reportError('Error fetching converted voice.', e);
 			}
 		})();
 
@@ -250,7 +251,7 @@
 				reconstructedAudio = blob;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError')
-					console.error('Error fetching reconstructed voice:', e);
+					reportError('Error fetching reconstructed voice.', e);
 			}
 		})();
 
