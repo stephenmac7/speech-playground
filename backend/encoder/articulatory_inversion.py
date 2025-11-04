@@ -219,7 +219,7 @@ class WavLMBPWrapper(nn.Module):
         )
         self.model_config = self.backbone_model.config
 
-        self.regression_head = nn.Linear(self.model_config.hidden_size,14)
+        self.regression_head = nn.Linear(self.model_config.hidden_size, 12)
         
     def forward(self, x,inp_mask=None, length=None):
         if inp_mask!=None:
