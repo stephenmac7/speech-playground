@@ -270,8 +270,6 @@
 			regions={modelRegions}
 			bind:this={modelViewer}
 		/>
-	</div>
-	<div class="viewer-card">
 		<div class="viewer-header">
 			<h3>Learner Audio</h3>
 			<Tooltip>
@@ -281,7 +279,7 @@
 					<li>Click on a region to play it.</li>
 					<li>
 						Hold Shift while clicking a region or dragging to play the corresponding audio in the
-						other track.
+						model.
 					</li>
 				</ul>
 			</Tooltip>
@@ -465,6 +463,9 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 0.5rem;
+	}
+	.viewer-header:not(:first-child) {
+		margin-top: 1rem;
 	}
 
 	.viewer-header h3 {
