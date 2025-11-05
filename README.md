@@ -27,7 +27,14 @@ uv pip install flash-attn --no-build-isolation
 - API: http://localhost:8000
 - Docs: http://localhost:8000/docs
 
-### 2) Run the frontend (SvelteKit)
+### 2) Run the aligner service (Optional)
+
+The forced alignment tool requires a separate service. If you want it, run this in a separate process:
+
+- Repo: https://github.com/stephenmac7/mfa-service
+- Expected endpoint: http://localhost:8001
+
+### 3) Run the frontend (SvelteKit)
 
 ```bash
 cd frontend
@@ -37,13 +44,6 @@ pnpm run dev
 ```
 
 This will start the app on http://localhost:5173.
-
-### Optional: aligner service
-
-The forced alignment tool requires a separate service. If you want it, run this in a separate process:
-
-- Repo: https://github.com/stephenmac7/mfa-service
-- Expected endpoint: http://localhost:8001
 
 ## Lazy-loaded modules
 
