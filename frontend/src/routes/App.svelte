@@ -89,6 +89,7 @@
 		width: 100%;
 		flex-grow: 1;
 		overflow-y: hidden;
+		box-sizing: border-box;
 	}
 
 	.tool-selection {

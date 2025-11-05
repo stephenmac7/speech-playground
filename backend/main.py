@@ -26,9 +26,7 @@ from dtaidistance import dtw_ndim
 import torchaudio
 import torchaudio.functional as F
 
-from alignment import score_frames, plot_waveform, build_alignments
-from tokenizer.kmeans import default_kmeans_model
-from encoder.articulatory_inversion import animate_two_scatter
+from speech_playground.alignment import score_frames, plot_waveform, build_alignments
 
 # Loads from backend/.env
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
@@ -83,6 +81,8 @@ DATA_ROOT = Path(os.getenv("DATA_ROOT"))
 def get_kmeans_model():
     if HUBERT_KMEANS_PATH is None:
         print("Loading default KMeans model for HuBERT")
+        from speech_playground.tokenizer.kmeans import default_kmeans_model
+
         return default_kmeans_model()
 
     import joblib
@@ -97,22 +97,31 @@ def get_kmeans_model():
 
 @lru_cache()
 def get_hubert():
-    from encoder.hubert import HubertEncoder
+    from speech_playground.encoder.hubert import HubertEncoder
 
     return HubertEncoder()
 
 
 @lru_cache()
 def get_kanade(variant: str):
-    from encoder.kanade import KanadeEncoder
+    from speech_playground.encoder.kanade import KanadeEncoder
 
     model = KANADE_VARIANTS[variant]
     return KanadeEncoder(**model["source"])
 
+@lru_cache()
+def get_kanade_wavlm():
+    from speech_playground.encoder.kanade import KanadeWavLMEncoder
+
+    return KanadeWavLMEncoder(
+        config_path="/home/smcintosh/kanade-tokenizer/config/model/25hz.yaml",
+        weights_path="/home/smcintosh/kanade-tokenizer/weights/25hz_with_feature_decoder.safetensors"
+    )
+
 
 @lru_cache()
 def get_articulatory_inversion():
-    from encoder.articulatory_inversion import ArticulatoryInversionEncoder
+    from speech_playground.encoder.articulatory_inversion import ArticulatoryInversionEncoder
 
     return ArticulatoryInversionEncoder(
         weights=INVERSION_WEIGHTS_PATH, mu_path=INVERSION_MU_PATH, std_path=INVERSION_STD_PATH
@@ -130,14 +139,14 @@ def get_kanade_vocoder(variant: str):
 
 @lru_cache()
 def get_hubert_kmeans_tokenizer():
-    from tokenizer.kmeans import KMeansTokenizer
+    from speech_playground.tokenizer.kmeans import KMeansTokenizer
 
     return KMeansTokenizer(kmeans=get_kmeans_model())
 
 
 @lru_cache()
 def get_dpdp_tokenizer(encoder: str):
-    from tokenizer.dpdp import DPDPTokenizer
+    from speech_playground.tokenizer.dpdp import DPDPTokenizer
 
     if encoder == "hubert":
         cluster_centers = get_kmeans_model().cluster_centers_
@@ -151,14 +160,14 @@ def get_dpdp_tokenizer(encoder: str):
 
 @lru_cache()
 def get_sylber():
-    from encoder.sylber import SylberEncoder
+    from speech_playground.encoder.sylber import SylberEncoder
 
     return SylberEncoder()
 
 
 @lru_cache()
 def get_ifmdd():
-    from ifmdd import IFMDD
+    from speech_playground.ifmdd import IFMDD
 
     return IFMDD()
 
@@ -199,37 +208,50 @@ def parse_textgrid_to_json(textgrid_path: str) -> dict:
     return response_data
 
 
+@lru_cache()
+def get_encoders():
+    if INVERSION_TOP is None:
+        print("WARNING: Disabling inversion encoder in /models endpoint since files are missing.")
+
+    kanade_encoders = { 
+        model["variant"]: {
+            "label": model["name"],
+            "supports_discretization": True,
+        }
+        for model in KANADE_MODELS
+     }
+
+    return { 
+        "hubert": {"label": "HuBERT", "supports_discretization": True},
+        "inversion": {
+            "label": "Articulatory Inversion",
+            "supports_discretization": False,
+            "disabled": INVERSION_TOP is None,
+        },
+        "wavlm-kanade-recon": {
+            "label": "WavLM L6+9 Reconstruction",
+            "supports_discretization": False,
+        },
+        "wavlm": {
+            "label": "WavLM L6+9",
+            "supports_discretization": False,
+        },
+        **kanade_encoders,
+     }
+    
+
 @app.get("/models")
 def models_endpoint():
     """
     Tells the frontend what models are available. Returns flat lists for UI simplicity.
     """
-    if INVERSION_TOP is None:
-        print("WARNING: Disabling inversion encoder in /models endpoint since files are missing.")
-
-    kanade_encoders = [
-        {
-            "value": model["variant"],
-            "label": model["name"],
-            "supports_discretization": True,
-        }
-        for model in KANADE_MODELS
-    ]
+    encoders = [{"value": k, **v} for k, v in get_encoders().items()]
     vc_models = [
         {"value": model["variant"], "label": model["name"]} for model in KANADE_MODELS
     ]
 
     return {
-        "encoders": [
-            {"value": "hubert", "label": "HuBERT", "supports_discretization": True},
-            {
-                "value": "inversion",
-                "label": "Articulatory Inversion",
-                "supports_discretization": False,
-                "disabled": INVERSION_TOP is None,
-            },
-            *kanade_encoders,
-        ],
+        "encoders": encoders,
         "vc_models": vc_models,
     }
 
@@ -325,6 +347,15 @@ def compare_endpoint(
     encoder: str = Form(...),
     discretize: bool = Form(...),
 ):
+    encoder_details = get_encoders().get(encoder)
+    if encoder_details is None:
+        raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
+
+    if discretize and not encoder_details["supports_discretization"]:
+        raise HTTPException(
+            status_code=400, detail=f"Encoder '{encoder}' does not support discretization."
+        )
+
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
     xwav = xwav.squeeze(0)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
@@ -334,8 +365,8 @@ def compare_endpoint(
     if encoder == "hubert":
         hubert = get_hubert()
         frame_duration = hubert.frame_shift
-        x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate))
-        y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate))
+        x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate)).cpu().numpy()
+        y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate)).cpu().numpy()
 
         def get_tokens():
             tok = get_hubert_kmeans_tokenizer()
@@ -346,17 +377,30 @@ def compare_endpoint(
     elif encoder == "inversion":
         inversion = get_articulatory_inversion()
         frame_duration = inversion.frame_shift
-        x = inversion.encode_one(F.resample(xwav, xsr, inversion.sample_rate))
-        y = inversion.encode_one(F.resample(ywav, ysr, inversion.sample_rate))
+        x = inversion.encode_one(F.resample(xwav, xsr, inversion.sample_rate)).cpu().numpy()
+        y = inversion.encode_one(F.resample(ywav, ysr, inversion.sample_rate)).cpu().numpy()
 
         x_norm = x[:, :12] * inversion.std + inversion.mu
         y_norm = y[:, :12] * inversion.std + inversion.mu
         extra_results["articulatoryFeatures"] = [x_norm.tolist(), y_norm.tolist()]
 
         def get_tokens():
-            raise HTTPException(
-                status_code=501, detail="Tokenization for inversion encoder is not available."
-            )
+            assert False, "Discretization not supported for inversion encoder. Should have been caught earlier."
+    
+    elif encoder.startswith("wavlm"):
+        wavlm = get_kanade_wavlm()
+        frame_duration = wavlm.frame_shift
+        x_dict = wavlm.encode_one(F.resample(xwav, xsr, wavlm.sample_rate))
+        y_dict = wavlm.encode_one(F.resample(ywav, ysr, wavlm.sample_rate))
+        if encoder == "wavlm-kanade-recon":
+            x = x_dict["ssl_recon"].cpu().numpy()
+            y = y_dict["ssl_recon"].cpu().numpy()
+        else:
+            x = x_dict["ssl_real"].cpu().numpy()
+            y = y_dict["ssl_real"].cpu().numpy()
+
+        def get_tokens():
+            assert False, "Discretization not supported for WavLM encoder. Should have been caught earlier."
 
     else:
         kanade = get_kanade(encoder)
@@ -396,11 +440,11 @@ def compare_endpoint(
         )
 
         # visualize path for debugging
-        plt.imshow(cosine_sims, aspect="auto", origin="lower")
-        plt.colorbar()
-        plt.title("Cosine Similarity")
-        plt.xlabel("Y Segments")
-        plt.ylabel("X Segments")
+        # plt.imshow(cosine_sims, aspect="auto", origin="lower")
+        # plt.colorbar()
+        # plt.title("Cosine Similarity")
+        # plt.xlabel("Y Segments")
+        # plt.ylabel("X Segments")
         # Overlay the DTW path: x-axis is columns (j -> Y segments), y-axis is rows (i -> X segments)
         # plt.plot([j for i, j in path], [i for i, j in path], color="red", linewidth=1)
         # plt.savefig("/tmp/cosine_similarity.png")
@@ -425,8 +469,15 @@ def compare_dpdp_endpoint(
     encoder: str = Form(...),
     gamma: float = Form(...),
 ):
-    if encoder == "inversion":
-        raise HTTPException(status_code=501, detail="DPDP for inversion encoder is not available.")
+    encoder_details = get_encoders().get(encoder)
+    if encoder_details is None:
+        raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
+
+    if not encoder_details["supports_discretization"]:
+        raise HTTPException(
+            status_code=400, detail=f"Encoder '{encoder}' does not support discretization."
+        )
+
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
     xwav = xwav.squeeze(0)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
@@ -435,10 +486,11 @@ def compare_dpdp_endpoint(
     if encoder == "hubert":
         hubert = get_hubert()
         frame_duration = hubert.frame_shift
-        x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate))
-        y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate))
+        x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate)).cpu().numpy()
+        y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate)).cpu().numpy()
 
     else:
+        assert encoder in KANADE_VARIANTS, f"Unknown encoder '{encoder}'"
         kanade = get_kanade(encoder)
         frame_duration = kanade.frame_shift
         xfeatures = kanade.encode_one(F.resample(xwav, xsr, kanade.sample_rate))

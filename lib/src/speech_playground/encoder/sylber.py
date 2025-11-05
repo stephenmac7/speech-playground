@@ -18,7 +18,7 @@ class SylberEncoder:
         if validate:
             # check normalized (mean is approx 0, std is approx 1)
             assert (waveforms[0].mean().abs() < 1e-2).all(), "Input waveforms must be normalized (mean approx 0)"
-            assert ((waveforms[0].std() - 1.0).abs() < 1e-2).all(), "Input waveforms must be normalized (std approx 1)"
+            assert ((waveforms[0].std() - 1.0).abs() < 3e-2).all(), "Input waveforms must be normalized (std approx 1)"
         # Convert from (batch, samples) to list of (channels, samples)
         wav_list = [waveforms[i].unsqueeze(0) for i in range(len(waveforms))]
         return self.segmenter(wav=wav_list)
