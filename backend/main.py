@@ -228,14 +228,15 @@ def get_encoders():
             "supports_discretization": False,
             "disabled": INVERSION_TOP is None,
         },
-        "wavlm-kanade-recon": {
-            "label": "WavLM L6+9 Reconstruction",
-            "supports_discretization": False,
-        },
-        "wavlm": {
-            "label": "WavLM L6+9",
-            "supports_discretization": False,
-        },
+        # In development:
+        # "wavlm-kanade-recon": {
+        #     "label": "WavLM L6+9 Reconstruction",
+        #     "supports_discretization": False,
+        # },
+        # "wavlm": {
+        #     "label": "WavLM L6+9",
+        #     "supports_discretization": False,
+        # },
         **kanade_encoders,
      }
     
@@ -304,8 +305,6 @@ def process_audio_endpoint(file: UploadFile = File(...), apply_vad: bool = Form(
     )
 
 
-# Instead of app.mount("/data", StaticFiles(directory="/work/smcintosh/data", follow_symlink=True), name="data")
-# Someday: add caching?
 @app.get("/data/{filename:path}")
 def data_endpoint(filename: str):
     if not filename.endswith(".wav"):
@@ -617,36 +616,3 @@ def reconstruct_endpoint(
 
     return streaming_response_of_audio(reconstructed_waveform, kanade.sample_rate)
 
-
-# @app.post("/transfer_intervals/{tier}")
-# def transfer_intervals_endpoint(tier: str, file: UploadFile = File(...)):
-#     EXAMPLE_FILE = Path("/work/smcintosh/experiments/phrase/AE/F01/S_PH_B_1_234.wav")
-#     EXAMPLE_TEXTGRID = EXAMPLE_FILE.with_suffix('.TextGrid')
-#
-#     xwav, _ = torchaudio.load_with_torchcodec(EXAMPLE_FILE)
-#     xwav = xwav.unsqueeze(0)
-#     x = encode(hubert, xwav.cuda()).squeeze().cpu().numpy()
-#     xcodes, xboundaries = segment(x, kmeans.cluster_centers_, gamma=0.2)
-#
-#     ywav, sr = torchaudio.load_with_torchcodec(file.file, normalize=True)
-#     if sr != 16000:
-#         raise HTTPException(status_code=400, detail="Uploaded audio must be 16kHz sample rate.")
-#
-#     ywav = ywav.unsqueeze(0)
-#     y = encode(hubert, ywav.cuda()).squeeze().cpu().numpy()
-#     ycodes, yboundaries = segment(y, kmeans.cluster_centers_, gamma=0.2)
-#     x_sample_map, y_sample_map = create_alignment_map(
-#         xcodes, ycodes, xboundaries, yboundaries, xwav[0][0], ywav[0][0],
-#         gap_penalty=-1, match_score=1, mismatch_score=-1
-#     )
-#     tg = tgt.io.read_textgrid(EXAMPLE_TEXTGRID)
-#     transferred = transfer_intervals(tg.get_tier_by_name(tier).annotations, (x_sample_map, y_sample_map))
-#     result = [
-#         {
-#             "start": interval.start_time,
-#             "end": interval.end_time,
-#             "content": interval.text
-#         }
-#         for interval in transferred
-#     ]
-#     return {"intervals": result}
