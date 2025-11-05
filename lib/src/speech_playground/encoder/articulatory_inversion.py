@@ -199,40 +199,49 @@ class WavLMWrapper(nn.Module):
 
         return predicted
 
+
 # @dataclass
 # class WavLMWrapperArgs:
 #     finetune_method: str
 #     lora_rank: int
 #     lora_alpha: int
-# 
+#
 # args = WavLMWrapperArgs('lora', 4, 4)
+
 
 class WavLMBPWrapper(nn.Module):
     def __init__(
-        self, 
+        self,
     ):
         super(WavLMBPWrapper, self).__init__()
-        
+
         self.backbone_model = WavLMModel.from_pretrained(
-            "microsoft/wavlm-base-plus",
-            output_hidden_states=True
+            "microsoft/wavlm-base-plus", output_hidden_states=True
         )
         self.model_config = self.backbone_model.config
 
         self.regression_head = nn.Linear(self.model_config.hidden_size, 12)
-        
-    def forward(self, x,inp_mask=None, length=None):
-        if inp_mask!=None:
-            x = self.backbone_model(x,attention_mask=inp_mask).last_hidden_state
+
+    def forward(self, x, inp_mask=None, length=None):
+        if inp_mask != None:
+            x = self.backbone_model(x, attention_mask=inp_mask).last_hidden_state
         else:
             x = self.backbone_model(x).last_hidden_state
-         
+
         predicted = self.regression_head(x)
 
         return predicted
 
+
 class ArticulatoryInversionEncoder:
-    def __init__(self, *, weights: Path, mu_path: Path, std_path: Path, device: Optional[torch.device] = "cuda"):
+    def __init__(
+        self,
+        *,
+        weights: Path,
+        mu_path: Path,
+        std_path: Path,
+        device: Optional[torch.device] = "cuda"
+    ):
         self.model = WavLMBPWrapper()
         state_dict = torch.load(weights, map_location="cpu")
         self.model.load_state_dict(state_dict)
@@ -245,13 +254,12 @@ class ArticulatoryInversionEncoder:
     def encode_one(self, waveform: torch.Tensor) -> np.ndarray:
         assert waveform.ndim == 1, "Input waveform must be 1D (samples,)"
         with torch.no_grad():
-            encoded = self.model(
-                waveform.unsqueeze(0).to(self.device)
-            ).squeeze().detach().cpu().numpy()
-        return encoded
+            return self.model(waveform.unsqueeze(0).to(self.device)).squeeze()
 
     def encode(self, waveforms: torch.Tensor) -> np.ndarray:
-        raise NotImplementedError("Batch encoding not implemented for ArticulatoryInversionEncoder")
+        raise NotImplementedError(
+            "Batch encoding not implemented for ArticulatoryInversionEncoder"
+        )
 
     @property
     def sample_rate(self) -> int:
@@ -259,8 +267,7 @@ class ArticulatoryInversionEncoder:
 
     @property
     def frame_shift(self) -> float:
-        return 0.02 # Sample as WavLM
-
+        return 0.02  # Sample as WavLM
 
 
 def animate_two_scatter(
@@ -286,33 +293,38 @@ def animate_two_scatter(
     T = min(P1.shape[0], P2.shape[0])
     P1, P2 = P1[:T], P2[:T]
 
-    #Axis limits
-    allx = np.concatenate([P1[...,0].ravel(), P2[...,0].ravel()])
-    ally = np.concatenate([P1[...,1].ravel(), P2[...,1].ravel()])
+    # Axis limits
+    allx = np.concatenate([P1[..., 0].ravel(), P2[..., 0].ravel()])
+    ally = np.concatenate([P1[..., 1].ravel(), P2[..., 1].ravel()])
     xmin, xmax = allx.min(), allx.max()
     ymin, ymax = ally.min(), ally.max()
     xr = xmax - xmin or 1.0
     yr = ymax - ymin or 1.0
-    xmin -= xr * margin; xmax += xr * margin
-    ymin -= yr * margin; ymax += yr * margin
+    xmin -= xr * margin
+    xmax += xr * margin
+    ymin -= yr * margin
+    ymax += yr * margin
 
     fig, ax = plt.subplots()
-    ax.set_xlim(xmin, xmax); ax.set_ylim(ymin, ymax)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
     ax.set_aspect("equal", adjustable="box")
-    #if not show_axes:
+    # if not show_axes:
     #    ax.axis("off")
 
     # Initial scatters
-    scat1 = ax.scatter(P1[0,:,0], P1[0,:,1], s=point_size, c="#E69F00", label="Learner",marker='x')
-    scat2 = ax.scatter(P2[0,:,0], P2[0,:,1], s=point_size, c="#009E73", label="Template")
+    scat1 = ax.scatter(
+        P1[0, :, 0], P1[0, :, 1], s=point_size, c="#E69F00", label="Learner", marker="x"
+    )
+    scat2 = ax.scatter(P2[0, :, 0], P2[0, :, 1], s=point_size, c="#009E73", label="Template")
     ax.legend(loc="lower left")
 
     def update(f):
         scat1.set_offsets(P1[f])
         scat2.set_offsets(P2[f])
         return scat1, scat2
-    
-    anim = FuncAnimation(fig, update, frames=T, interval=1000/fps, blit=False, repeat=True)
+
+    anim = FuncAnimation(fig, update, frames=T, interval=1000 / fps, blit=False, repeat=True)
 
     if save_path is not None:
         ext = save_path.lower().split(".")[-1]
@@ -320,7 +332,7 @@ def animate_two_scatter(
             anim.save(save_path, fps=fps, writer="pillow")
         else:
             anim.save(save_path, fps=fps)
-    ax.set_xlabel('X Position')
-    ax.set_ylabel('Y Position')
+    ax.set_xlabel("X Position")
+    ax.set_ylabel("Y Position")
     plt.show()
     return anim

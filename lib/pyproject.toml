@@ -1,27 +1,23 @@
 [project]
-name = "speech-playground-backend"
+name = "speech-playground"
 version = "0.1.0"
-description = "Backend for Speech Playground"
+description = "Library for speech processing"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi[standard]>=0.119",
     "numpy>=2.3.4",
-    "tgt>=1.5",
-    "soundfile>=0.13.1",
-    "torch",
-    "torchaudio",
+    "torch>=2.8,<2.9",
+    "torchaudio>=2.8,<2.9",
     "matplotlib>=3.10.7",
     "scikit-learn>=1.7.2",
     "dtaidistance>=2.3.13",
     "joblib>=1.5.2",
-    "torchcodec",
-    "python-dotenv>=1.0.1",
+    "torchcodec==0.7",
 ]
 
 [project.optional-dependencies]
 ifmdd = [
-    "speechbrain@git+https://github.com/speechbrain/speechbrain.git@c6d2a8b1836dd86d06404c67d211e518a82fc407",
+    "speechbrain",
     "huggingface_hub<1.0",
     "requests",
     "transformers",

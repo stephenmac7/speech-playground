@@ -1,6 +1,3 @@
-.vscode/
-*.local*
-
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -14,4 +11,7 @@ wheels/
 
 # Different packages for different machines
 uv.lock
+
+# This is a library
+.python-version
 
