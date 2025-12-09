@@ -8,11 +8,10 @@
 !.env.test
 
 # Custom
-models/
 scratch/
+models_local.py
 
 # Temporary
-kanade_tokenizer
 pretrained_models/
 exp_l2arctic/
 

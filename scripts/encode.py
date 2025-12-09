@@ -15,7 +15,9 @@ def get_encoder(args):
 
         output_key = "ssl_real" if args.encoder == "wavlm-l69" else "ssl_recon"
         return KanadeWavLMEncoder(
-            repo_id="frothywater/kanade-25hz", return_only=output_key
+            config_path="/home/smcintosh/kanade-tokenizer/config/model/25hz.yaml",
+            weights_path="/home/smcintosh/kanade-tokenizer/weights/25hz_with_feature_decoder.safetensors",
+            return_only=output_key,
         )
     raise ValueError(f"Unknown encoder: {args.encoder}")
 

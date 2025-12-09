@@ -10,7 +10,6 @@ dependencies = [
     "torchaudio>=2.8,<2.9",
     "matplotlib>=3.10.7",
     "scikit-learn>=1.7.2",
-    "dtaidistance>=2.3.13",
     "joblib>=1.5.2",
     "torchcodec==0.7",
 ]

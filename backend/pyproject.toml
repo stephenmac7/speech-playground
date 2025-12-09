@@ -13,10 +13,10 @@ dependencies = [
     "torchaudio",
     "matplotlib>=3.10.7",
     "scikit-learn>=1.7.2",
-    "dtaidistance>=2.3.13",
     "joblib>=1.5.2",
     "torchcodec",
     "python-dotenv>=1.0.1",
+    "dtw-python>=1.7.2",
 ]
 
 [project.optional-dependencies]
