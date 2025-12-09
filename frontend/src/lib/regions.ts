@@ -7,7 +7,7 @@ export type SylberResult = {
 	scores: number[];
 	xsegments: number[][];
 	ysegments: number[][];
-	y_to_x_mappings: number[][];
+	y_to_x_mappings: number[];
 };
 
 export function buildContinuousRegions(
@@ -164,12 +164,14 @@ export function buildSyllableRegions(result: SylberResult): Region[] {
 	const regions: Region[] = [];
 	result.scores.forEach((score, i) => {
 		const opacity = 0.8 * (1 - score);
+        const modelIndex = result.y_to_x_mappings[i];
 		regions.push({
             id: "syllable-" + i,
 			start: result.ysegments[i][0],
 			end: result.ysegments[i][1],
 			color: `rgba(255, 0, 0, ${opacity})`,
-			content: result.y_to_x_mappings[i].map((idx) => idx.toString()).join(', ')
+			// content: result.y_to_x_mappings[i].map((idx) => idx.toString()).join(', ')
+			content: modelIndex === -1 ? "" : modelIndex.toString(),
 		});
 	});
 	return regions;

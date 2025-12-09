@@ -16,13 +16,13 @@
 	type ComparisonMode = 'fixedRate' | 'syllable';
 
 	// Encoder config from backend (simplified flat lists)
-	type ModelsResponse = {
-		encoders: Array<{ value: string; label: string; supports_discretization: boolean }>;
-		vc_models: Array<{ value: string; label: string }>;
-	};
-
-	type EncoderOption = { value: string; label: string; supports_discretization: boolean; disabled?: boolean };
+	type EncoderOption = { value: string; label: string; discretizers: Array<string>; default_dist_method: string };
 	type VoiceModelOption = { value: string; label: string };
+
+	type ModelsResponse = {
+		encoders: Array<EncoderOption>;
+		vc_models: Array<VoiceModelOption>;
+	};
 
 	// ---------- Props ----------
 	let { tracks, active } = $props();
@@ -59,8 +59,9 @@
 	let vcModelOptions = $state<VoiceModelOption[]>([]);
 
 	// Fixed-rate diff
-	let encoder = $state('hubert');
+	let encoder = $state('hubert_l7');
 	let discretize = $state(false);
+	let discretizer = $state('bshall');
 	let combineRegions = $state(true);
 	let dpdp = $state(true);
 	let gamma = $state('0.2');
@@ -72,8 +73,9 @@
 	let articulatoryFeatures = $state<number[][] | undefined>();
 	let currentFrame = $state(0);
 
-	// Threshold controls
+	// Continuous diff controls
 	let trigger = $state(0.6);
+	let dist_method = $state("default");
 
 	// Syllable diff
 	let sylberResult: SylberResult | undefined = $state();
@@ -84,8 +86,8 @@
 	const selectedEncoderOption = $derived.by(() => encoderOptions.find((o) => o.value === encoder));
 	const supportsDiscretize = $derived.by(() => {
 		// Until list loads, default to true
-		if (!encoderOptions.length) return true;
-		return selectedEncoderOption?.supports_discretization ?? true;
+		if (!encoderOptions.length || !selectedEncoderOption) return true;
+		return selectedEncoderOption.discretizers.length > 0;
 	});
 
 	// ---------- Derived regions ----------
@@ -120,6 +122,15 @@
 		convertVoice && encoder !== voiceConversionModel ? convertedAudio : audio
 	);
 	let modelForComparison = $derived(reconstructModel ? reconstructedAudio : modelAudio);
+
+	// ---------- Effects: check discretizer ----------
+	$effect(() => {
+		if (!selectedEncoderOption) return;
+
+		if (!selectedEncoderOption.discretizers.includes(discretizer)) {
+			discretizer = selectedEncoderOption.discretizers[0];
+		}
+	});
 
 	// ---------- Effects: comparison fetch ----------
 
@@ -182,11 +193,15 @@
 						alignmentMap?: number[];
 						articulatoryFeatures?: number[][];
 					};
+					if (discretize) {
+						formData.append('discretizer', discretizer);
+					} else if (dist_method !== "default") {
+						formData.append('dist_method', dist_method);
+					}
 					if (discretize && dpdp) {
 						formData.append('gamma', gamma);
 						data = await postJson(`/api/compare_dpdp`, formData, controller.signal);
 					} else {
-						formData.append('discretize', discretize ? '1' : '0');
 						data = await postJson(`/api/compare`, formData, controller.signal);
 					}
 					frameDuration = data.frameDuration;
@@ -307,6 +322,14 @@
 			/>
 		</div>
 	{/if}
+	<details>
+		<summary>Details</summary>
+		{#if sylberResult}
+			<p>{JSON.stringify(sylberResult.scores)}</p>
+		{:else}
+			<p>{JSON.stringify(scores)}</p>
+		{/if}
+	</details>
 
 	<div class="controls">
 		<fieldset>
@@ -334,11 +357,11 @@
 						>
 							{#if encoderOptions.length}
 								{#each encoderOptions as opt}
-									<option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+									<option value={opt.value}>{opt.label}</option>
 								{/each}
 							{:else}
 								<!-- Fallback: HuBERT only until list loads -->
-								<option value="hubert">HuBERT</option>
+								<option value="hubert_l7">HuBERT L7</option>
 							{/if}
 						</select>
 					</label>
@@ -354,6 +377,19 @@
 					</div>
 					<fieldset class="sub-fieldset">
 						{#if discretize}
+							<label>
+								Discretizer:
+								<select bind:value={discretizer}>
+									{#if supportsDiscretize && selectedEncoderOption}
+										{#each selectedEncoderOption.discretizers as opt}
+											<option value={opt}>{opt}</option>
+										{/each}
+									{:else}
+										<!-- Fallback: bshall only until list loads -->
+										<option value="bshall">bshall</option>
+									{/if}
+								</select>
+							</label>
 							<label>
 								Combine Regions:
 								<input type="checkbox" bind:checked={combineRegions} />
@@ -387,6 +423,14 @@
 								/>
 							</label>
 						{:else}
+							<label>
+								Distance Method:
+								<select bind:value={dist_method}>
+									<option value="default">Default{selectedEncoderOption ? ` (${selectedEncoderOption.default_dist_method})` : ''}</option>
+									<option value="euclidean">Euclidean</option>
+									<option value="cosine">Cosine</option>
+								</select>
+							</label>
 							<label>
 								Trigger:
 								<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />
@@ -438,6 +482,7 @@
 		flex-wrap: wrap;
 		gap: 1rem;
 		align-items: flex-start;
+		justify-content: stretch;
 		margin-top: 1rem;
 	}
 	fieldset {

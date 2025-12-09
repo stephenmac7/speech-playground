@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from functools import lru_cache
-from typing import Literal
+from typing import Optional
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -11,151 +11,34 @@ import os
 from dotenv import load_dotenv
 
 import io
-import json
 import numpy as np
 import tgt
 import soundfile
 import tempfile
 import torch
 import torchaudio
+import time
 
-import matplotlib.pyplot as plt
-from sklearn.metrics.pairwise import cosine_similarity
-from dtaidistance import dtw_ndim
+import dtw
 
 import torchaudio
 import torchaudio.functional as F
 
-from speech_playground.alignment import score_frames, plot_waveform, build_alignments
+from speech_playground.alignment import score_frames, score_continuous_frames, build_alignments
 
 # Loads from backend/.env
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 
-# Load configuration via environment variables
-PARENT_DIR = Path(__file__).parent
-
-HUBERT_KMEANS_PATH = os.getenv("HUBERT_KMEANS_PATH")
-if HUBERT_KMEANS_PATH is not None:
-    HUBERT_KMEANS_PATH = Path(HUBERT_KMEANS_PATH)
-    if not HUBERT_KMEANS_PATH.is_absolute():
-        HUBERT_KMEANS_PATH = PARENT_DIR / HUBERT_KMEANS_PATH
-
-KANADE_MODELS_PATH = Path(os.getenv("KANADE_MODELS_PATH"))
-if KANADE_MODELS_PATH is None:
-    raise ValueError("KANADE_MODELS_PATH environment variable must be set. Copy backend/.env.example to backend/.env.")
-if not KANADE_MODELS_PATH.is_absolute():
-    KANADE_MODELS_PATH = PARENT_DIR / KANADE_MODELS_PATH
-with open(KANADE_MODELS_PATH, "r") as f:
-    KANADE_MODELS = json.load(f)
-KANADE_VARIANTS = {model["variant"]: model for model in KANADE_MODELS}
-
-INVERSION_TOP = os.getenv("INVERSION_TOP")
-if INVERSION_TOP is None:
-    INVERSION_WEIGHTS_PATH = None
-    INVERSION_MU_PATH = None
-    INVERSION_STD_PATH = None
-else:
-    if not Path(INVERSION_TOP).is_absolute():
-        INVERSION_TOP = PARENT_DIR / INVERSION_TOP
-    if not Path(INVERSION_TOP).exists():
-        raise ValueError(f"INVERSION_TOP directory '{INVERSION_TOP}' does not exist.")
-    INVERSION_TOP = Path(INVERSION_TOP)
-    INVERSION_WEIGHTS_PATH = Path(
-        os.getenv(
-            "INVERSION_WEIGHTS_PATH",
-            str(INVERSION_TOP / "checkpoints/inversion/wavlm_baseplus_inversion_distilled"),
-        )
-    )
-    INVERSION_MU_PATH = Path(
-        os.getenv("INVERSION_MU_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy"))
-    )
-    INVERSION_STD_PATH = Path(
-        os.getenv("INVERSION_STD_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy"))
-    )
+from models_config import (
+    MODELS,
+    MODELS_MAP,
+    KANADE_MODELS,
+    get_kanade,
+    get_kanade_vocoder,
+)
 
 # Base directory for /data endpoint
 DATA_ROOT = Path(os.getenv("DATA_ROOT"))
-
-# --- Lazy, cached factories (loaded on first use) ---
-@lru_cache()
-def get_kmeans_model():
-    if HUBERT_KMEANS_PATH is None:
-        print("Loading default KMeans model for HuBERT")
-        from speech_playground.tokenizer.kmeans import default_kmeans_model
-
-        return default_kmeans_model()
-
-    import joblib
-
-    print("Loading custom KMeans model for HuBERT from", HUBERT_KMEANS_PATH)
-    kmeans_path = Path(HUBERT_KMEANS_PATH)
-    if not kmeans_path.is_absolute():
-        kmeans_path = PARENT_DIR / kmeans_path
-
-    return joblib.load(kmeans_path)
-
-
-@lru_cache()
-def get_hubert():
-    from speech_playground.encoder.hubert import HubertEncoder
-
-    return HubertEncoder()
-
-
-@lru_cache()
-def get_kanade(variant: str):
-    from speech_playground.encoder.kanade import KanadeEncoder
-
-    model = KANADE_VARIANTS[variant]
-    return KanadeEncoder(**model["source"])
-
-@lru_cache()
-def get_kanade_wavlm():
-    from speech_playground.encoder.kanade import KanadeWavLMEncoder
-
-    return KanadeWavLMEncoder(
-        config_path="/home/smcintosh/kanade-tokenizer/config/model/25hz.yaml",
-        weights_path="/home/smcintosh/kanade-tokenizer/weights/25hz_with_feature_decoder.safetensors"
-    )
-
-
-@lru_cache()
-def get_articulatory_inversion():
-    from speech_playground.encoder.articulatory_inversion import ArticulatoryInversionEncoder
-
-    return ArticulatoryInversionEncoder(
-        weights=INVERSION_WEIGHTS_PATH, mu_path=INVERSION_MU_PATH, std_path=INVERSION_STD_PATH
-    )
-
-
-@lru_cache()
-def get_kanade_vocoder(variant: str):
-    from kanade_tokenizer.util import load_vocoder
-
-    kanade = get_kanade(variant)
-
-    return load_vocoder().to(kanade.device)
-
-
-@lru_cache()
-def get_hubert_kmeans_tokenizer():
-    from speech_playground.tokenizer.kmeans import KMeansTokenizer
-
-    return KMeansTokenizer(kmeans=get_kmeans_model())
-
-
-@lru_cache()
-def get_dpdp_tokenizer(encoder: str):
-    from speech_playground.tokenizer.dpdp import DPDPTokenizer
-
-    if encoder == "hubert":
-        cluster_centers = get_kmeans_model().cluster_centers_
-    elif encoder == "inversion":
-        raise NotImplementedError("DPDP tokenizer for inversion encoder is not implemented yet.")
-    else:
-        cluster_centers = get_kanade(encoder).codebook
-
-    return DPDPTokenizer(cluster_centers=cluster_centers)
 
 
 @lru_cache()
@@ -210,36 +93,14 @@ def parse_textgrid_to_json(textgrid_path: str) -> dict:
 
 @lru_cache()
 def get_encoders():
-    if INVERSION_TOP is None:
-        print("WARNING: Disabling inversion encoder in /models endpoint since files are missing.")
+    return {
+        model.slug: {
+            "label": model.name,
+            "discretizers": model.discretizers(),
+            "default_dist_method": model.default_dist_method,
+        } for model in MODELS
+    }
 
-    kanade_encoders = { 
-        model["variant"]: {
-            "label": model["name"],
-            "supports_discretization": True,
-        }
-        for model in KANADE_MODELS
-     }
-
-    return { 
-        "hubert": {"label": "HuBERT", "supports_discretization": True},
-        "inversion": {
-            "label": "Articulatory Inversion",
-            "supports_discretization": False,
-            "disabled": INVERSION_TOP is None,
-        },
-        # In development:
-        # "wavlm-kanade-recon": {
-        #     "label": "WavLM L6+9 Reconstruction",
-        #     "supports_discretization": False,
-        # },
-        # "wavlm": {
-        #     "label": "WavLM L6+9",
-        #     "supports_discretization": False,
-        # },
-        **kanade_encoders,
-     }
-    
 
 @app.get("/models")
 def models_endpoint():
@@ -344,99 +205,60 @@ def compare_endpoint(
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
     encoder: str = Form(...),
-    discretize: bool = Form(...),
+    discretizer: Optional[str] = Form(None),
+    dist_method: Optional[str] = Form(None),
 ):
-    encoder_details = get_encoders().get(encoder)
-    if encoder_details is None:
+    model = MODELS_MAP.get(encoder)
+    if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
 
-    if discretize and not encoder_details["supports_discretization"]:
-        raise HTTPException(
-            status_code=400, detail=f"Encoder '{encoder}' does not support discretization."
-        )
-
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
-    xwav = xwav.squeeze(0)
+    xwav = model.resample(xwav.squeeze(0), xsr)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
-    ywav = ywav.squeeze(0)
+    ywav = model.resample(ywav.squeeze(0), ysr)
 
-    extra_results = {}
-    if encoder == "hubert":
-        hubert = get_hubert()
-        frame_duration = hubert.frame_shift
-        x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate)).cpu().numpy()
-        y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate)).cpu().numpy()
+    start_time = time.time()
+    x = model.encode(xwav)
+    y = model.encode(ywav)
+    end_time = time.time()
+    print(f"Encoding time for model '{model.slug}': {end_time - start_time:.2f} seconds")
 
-        def get_tokens():
-            tok = get_hubert_kmeans_tokenizer()
-            x_tokens = tok.tokenize_one(x)
-            y_tokens = tok.tokenize_one(y)
-            return x_tokens, y_tokens
-
-    elif encoder == "inversion":
-        inversion = get_articulatory_inversion()
-        frame_duration = inversion.frame_shift
-        x = inversion.encode_one(F.resample(xwav, xsr, inversion.sample_rate)).cpu().numpy()
-        y = inversion.encode_one(F.resample(ywav, ysr, inversion.sample_rate)).cpu().numpy()
-
-        x_norm = x[:, :12] * inversion.std + inversion.mu
-        y_norm = y[:, :12] * inversion.std + inversion.mu
-        extra_results["articulatoryFeatures"] = [x_norm.tolist(), y_norm.tolist()]
-
-        def get_tokens():
-            assert False, "Discretization not supported for inversion encoder. Should have been caught earlier."
-    
-    elif encoder.startswith("wavlm"):
-        wavlm = get_kanade_wavlm()
-        frame_duration = wavlm.frame_shift
-        x_dict = wavlm.encode_one(F.resample(xwav, xsr, wavlm.sample_rate))
-        y_dict = wavlm.encode_one(F.resample(ywav, ysr, wavlm.sample_rate))
-        if encoder == "wavlm-kanade-recon":
-            x = x_dict["ssl_recon"].cpu().numpy()
-            y = y_dict["ssl_recon"].cpu().numpy()
-        else:
-            x = x_dict["ssl_real"].cpu().numpy()
-            y = y_dict["ssl_real"].cpu().numpy()
-
-        def get_tokens():
-            assert False, "Discretization not supported for WavLM encoder. Should have been caught earlier."
-
+    if hasattr(model, "extra_results"):
+        extra_results = model.extra_results(x, y)
     else:
-        kanade = get_kanade(encoder)
-        frame_duration = kanade.frame_shift
-        xfeatures = kanade.encode_one(F.resample(xwav, xsr, kanade.sample_rate))
-        yfeatures = kanade.encode_one(F.resample(ywav, ysr, kanade.sample_rate))
+        extra_results = {}
 
-        x = xfeatures.content_embedding.cpu().float().numpy()
-        y = yfeatures.content_embedding.cpu().float().numpy()
-
-        def get_tokens():
-            return (
-                xfeatures.content_token_indices.cpu().numpy(),
-                yfeatures.content_token_indices.cpu().numpy(),
-            )
-
-    if discretize:
-        xtokens, ytokens = get_tokens()
-        y_positions, path = score_frames(ytokens, xtokens, normalize=True)
+    if discretizer is not None:
+        xtokens = model.discretize(x, discretizer)
+        ytokens = model.discretize(y, discretizer)
+        scores, path = score_frames(ytokens, xtokens, normalize=True)
         alignment_map = build_alignments(path, len(ytokens), len(xtokens))
     else:
-        cosine_sims = cosine_similarity(x, y)
-        path = dtw_ndim.warping_path(x, y)
-        alignment_map = np.zeros(len(y), dtype=int)
+        x = model.to_continuous_features(x)
+        y = model.to_continuous_features(y)
+        dist_method = dist_method or model.default_dist_method
+
+        alignment = dtw.dtw(x, y, dist_method=dist_method, keep_internals=True)
+        alignment_map = dtw.warp(alignment, index_reference=False)
+
         y_scores_sum = np.zeros(len(y))
         y_scores_count = np.zeros(len(y))
-        for i, j in path:
-            alignment_map[j] = i  # overwrites previous, but that's what we want
-            y_scores_sum[j] += cosine_sims[i, j]
+
+        for i, j in zip(alignment.index1, alignment.index2):
+            y_scores_sum[j] += alignment.localCostMatrix[i, j] 
             y_scores_count[j] += 1
 
         y_positions = np.divide(
             y_scores_sum,
             y_scores_count,
-            out=np.zeros_like(y_scores_sum),
+            out=np.full_like(y_scores_sum, np.nan), # Use nan or inf for 0 counts
             where=y_scores_count != 0,
         )
+
+        if dist_method == "euclidean":
+            scores = np.exp(model.score_alpha * (y_positions**2))
+        else:
+            scores = y_positions
 
         # visualize path for debugging
         # plt.imshow(cosine_sims, aspect="auto", origin="lower")
@@ -448,16 +270,21 @@ def compare_endpoint(
         # plt.plot([j for i, j in path], [i for i, j in path], color="red", linewidth=1)
         # plt.savefig("/tmp/cosine_similarity.png")
         # plt.close()
+        # plt.figure(figsize=(10,5))
+        # plt.plot(y_positions)
+        # plt.plot(scores)
+        # plt.savefig("/tmp/y_positions.png")
+        # plt.close()
 
     # Plot for debugging
     # plot_waveform(ywav, sr, agreement_scores=y_positions)
     # plt.savefig("/tmp/comparison.png")
     # plt.close()
     return {
-        "scores": y_positions.tolist(),
-        "frameDuration": frame_duration,
+        "scores": scores.tolist(),
+        "frameDuration": model.frame_duration,
         "alignmentMap": alignment_map.tolist(),
-        **extra_results,
+        **extra_results
     }
 
 
@@ -467,39 +294,27 @@ def compare_dpdp_endpoint(
     model_file: UploadFile = File(...),
     encoder: str = Form(...),
     gamma: float = Form(...),
+    discretizer: str = Form(...),
 ):
-    encoder_details = get_encoders().get(encoder)
-    if encoder_details is None:
+    from speech_playground.tokenizer.dpdp import DPDPTokenizer
+
+    model = MODELS_MAP.get(encoder)
+    if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
 
-    if not encoder_details["supports_discretization"]:
-        raise HTTPException(
-            status_code=400, detail=f"Encoder '{encoder}' does not support discretization."
-        )
-
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
-    xwav = xwav.squeeze(0)
+    xwav = model.resample(xwav.squeeze(0), xsr)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
-    ywav = ywav.squeeze(0)
+    ywav = model.resample(ywav.squeeze(0), ysr)
 
-    if encoder == "hubert":
-        hubert = get_hubert()
-        frame_duration = hubert.frame_shift
-        x = hubert.encode_one(F.resample(xwav, xsr, hubert.sample_rate)).cpu().numpy()
-        y = hubert.encode_one(F.resample(ywav, ysr, hubert.sample_rate)).cpu().numpy()
+    x = model.to_continuous_features(model.encode(xwav))
+    y = model.to_continuous_features(model.encode(ywav))
 
-    else:
-        assert encoder in KANADE_VARIANTS, f"Unknown encoder '{encoder}'"
-        kanade = get_kanade(encoder)
-        frame_duration = kanade.frame_shift
-        xfeatures = kanade.encode_one(F.resample(xwav, xsr, kanade.sample_rate))
-        yfeatures = kanade.encode_one(F.resample(ywav, ysr, kanade.sample_rate))
+    cluster_centers = model.cluster_centers(discretizer)
+    tokenizer = DPDPTokenizer(cluster_centers=cluster_centers)
 
-        x = xfeatures.content_embedding.cpu().float().numpy()
-        y = yfeatures.content_embedding.cpu().float().numpy()
-
-    xcodes, xboundaries = get_dpdp_tokenizer(encoder).tokenize_one(x, gamma=gamma)
-    ycodes, yboundaries = get_dpdp_tokenizer(encoder).tokenize_one(y, gamma=gamma)
+    xcodes, xboundaries = tokenizer.tokenize_one(x, gamma=gamma)
+    ycodes, yboundaries = tokenizer.tokenize_one(y, gamma=gamma)
 
     y_mismatches, path = score_frames(ycodes, xcodes, normalize=True)
     alignment_map_codes = build_alignments(path, len(ycodes), len(xcodes))
@@ -511,7 +326,7 @@ def compare_dpdp_endpoint(
         "scores": y_mismatches.tolist(),
         "boundaries": yboundaries.tolist(),
         "modelBoundaries": xboundaries.tolist(),
-        "frameDuration": frame_duration,
+        "frameDuration": model.frame_duration,
         "alignmentMap": alignment_map.tolist(),
     }
 
@@ -531,39 +346,19 @@ def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile
     x = sylber.encode_one(F.resample(xwav, xsr, sylber.sample_rate))
     y = sylber.encode_one(F.resample(ywav, ysr, sylber.sample_rate))
 
-    # plot_waveform(ywav, sr, agreement_scores=y_positions)
-    # plt.savefig("/tmp/comparison.png")
-    # plt.close()
-
-    # cosine_sims = np.einsum("nd,nd->n", x["segment_features"], y["segment_features"]) / (
-    #     np.linalg.norm(x["segment_features"], axis=1)
-    #     * np.linalg.norm(y["segment_features"], axis=1)
-    # )
-
-    cosine_sims = cosine_similarity(x["segment_features"], y["segment_features"])
-    path = dtw_ndim.warping_path(x["segment_features"], y["segment_features"])
-
     xsegments = x["segments"].tolist()
     ysegments = y["segments"].tolist()
 
-    y_scores_sum = np.zeros(len(ysegments))
-    y_scores_count = np.zeros(len(ysegments))
-    y_to_x_mappings = [[] for _ in range(len(ysegments))]
-    for i, j in path:
-        y_scores_sum[j] += cosine_sims[i, j]
-        y_scores_count[j] += 1
-        y_to_x_mappings[j].append(i)
+    scores, path = score_continuous_frames(y["segment_features"], x["segment_features"], normalize=True)
+    alignment_map = build_alignments(path, len(ysegments), len(xsegments), fill_backwards=False)
 
-    y_avg_score = np.divide(
-        y_scores_sum, y_scores_count, out=np.zeros_like(y_scores_sum), where=y_scores_count != 0
-    )
-
-    return {
-        "scores": y_avg_score.tolist(),
+    result = {
+        "scores": scores.tolist(), #y_avg_score.tolist(),
         "xsegments": xsegments,
         "ysegments": ysegments,
-        "y_to_x_mappings": y_to_x_mappings,
+        "y_to_x_mappings": alignment_map.tolist(), #y_to_x_mappings,
     }
+    return result
 
 
 @app.post("/convert_voice")

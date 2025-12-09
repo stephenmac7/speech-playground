@@ -27,6 +27,7 @@ from transformers import (
     Wav2Vec2Processor,
     AutoProcessor,
     WavLMModel,
+    WavLMConfig,
     AutoFeatureExtractor,
 )
 from torch.nn.utils import weight_norm
@@ -215,10 +216,10 @@ class WavLMBPWrapper(nn.Module):
     ):
         super(WavLMBPWrapper, self).__init__()
 
-        self.backbone_model = WavLMModel.from_pretrained(
+        self.model_config = WavLMConfig.from_pretrained(
             "microsoft/wavlm-base-plus", output_hidden_states=True
         )
-        self.model_config = self.backbone_model.config
+        self.backbone_model = WavLMModel(self.model_config)
 
         self.regression_head = nn.Linear(self.model_config.hidden_size, 12)
 
@@ -243,9 +244,10 @@ class ArticulatoryInversionEncoder:
         device: Optional[torch.device] = "cuda"
     ):
         self.model = WavLMBPWrapper()
-        state_dict = torch.load(weights, map_location="cpu")
+        self.model.to(device)
+        state_dict = torch.load(weights, map_location=device)
         self.model.load_state_dict(state_dict)
-        self.model.to(device).eval()
+        self.model.eval()
 
         self.mu = np.expand_dims(np.load(mu_path), 0)
         self.std = np.expand_dims(np.load(std_path), 0)
@@ -267,7 +269,7 @@ class ArticulatoryInversionEncoder:
 
     @property
     def frame_shift(self) -> float:
-        return 0.02  # Sample as WavLM
+        return 0.02  # Same as WavLM
 
 
 def animate_two_scatter(

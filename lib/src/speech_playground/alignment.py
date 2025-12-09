@@ -80,6 +80,97 @@ def score_frames(learner, reference, *, gap_penalty=-1, match_score=1, mismatch_
 
     return x_penalties, alignment_path
 
+def compute_continuous_grid(x, y, *, gap_penalty):
+    """
+    x, y: numpy arrays of shape (N, D) and (M, D) representing sequences of vectors.
+    """
+    len_x, len_y = x.shape[0], y.shape[0]
+    
+    # 1. Pre-compute Cosine Similarity Matrix (N x M)
+    # Normalize vectors to unit length
+    x_norm = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-9)
+    y_norm = y / (np.linalg.norm(y, axis=1, keepdims=True) + 1e-9)
+    
+    # Dot product of normalized vectors = Cosine Similarity
+    # Range: [-1.0, 1.0]
+    sim_matrix = np.dot(x_norm, y_norm.T)
+
+    # 2. Fill DP Grid
+    grid = np.zeros((len_x + 1, len_y + 1))
+    
+    # Initialize first column with gap penalties (forcing x to be accounted for)
+    grid[1:, 0] = np.arange(1, len_x + 1) * gap_penalty
+    
+    # No penalty for starting in the middle of y (grid[0, :] remains 0)
+
+    for i in range(1, len_x + 1):
+        for j in range(1, len_y + 1):
+            score = sim_matrix[i-1, j-1]
+            
+            grid[i, j] = max(
+                grid[i-1, j] + gap_penalty,   # Gap in y
+                grid[i, j-1] + gap_penalty,   # Gap in x
+                grid[i-1, j-1] + score        # Match/Substitution
+            )
+            
+    return grid, sim_matrix
+
+def score_continuous_frames(learner, reference, *, gap_penalty=-0.5, normalize=False):
+    x = learner
+    y = reference
+
+    # Step 1: Compute grid and retrieve similarity matrix
+    grid, sim_matrix = compute_continuous_grid(x, y, gap_penalty=gap_penalty)
+
+    # Step 2: Backtrack
+    x_penalties = np.zeros(len(x))
+    alignment_path = []
+
+    i = len(x)
+    j = np.argmax(grid[i, :])  # Start at the max in the last row (semi-global)
+
+    while i > 0 and j > 0:
+        # The score for aligning these two specific vectors
+        current_match_score = sim_matrix[i-1, j-1]
+
+        # Check diagonal (Match/Substitution)
+        # We use a small epsilon for float comparison
+        if np.isclose(grid[i, j], grid[i-1, j-1] + current_match_score):
+            x_penalties[i-1] = current_match_score
+            alignment_path.append((i-1, j-1))
+            i -= 1
+            j -= 1
+        # Check vertical (Gap in reference)
+        elif np.isclose(grid[i, j], grid[i-1, j] + gap_penalty):
+            x_penalties[i-1] = gap_penalty
+            alignment_path.append((i-1, None))
+            i -= 1
+        # Check horizontal (Gap in learner)
+        else:
+            alignment_path.append((None, j-1))
+            j -= 1
+
+    # Handle remaining start gaps
+    while i > 0:
+        x_penalties[i-1] = gap_penalty
+        alignment_path.append((i-1, None))
+        i -= 1
+
+    alignment_path.reverse()
+
+    if normalize:
+        # Cosine similarity is [-1, 1], Gap penalty is usually negative.
+        # We define the theoretical max as 1.0 (perfect alignment)
+        # and min as the lesser of -1.0 or the gap penalty.
+        max_val = 1.0
+        min_val = min(-1.0, gap_penalty)
+        
+        score_range = max_val - min_val
+        normalized_scores = (x_penalties - min_val) / score_range
+        return normalized_scores, alignment_path
+
+    return x_penalties, alignment_path
+
 def plot_waveform(waveform, sample_rate, *, agreement_scores):
     waveform = waveform.numpy()
 
@@ -121,7 +212,7 @@ def plot_waveform(waveform, sample_rate, *, agreement_scores):
     plt.tight_layout()
 
 
-def build_alignments(path, learner_len, reference_len):
+def build_alignments(path, learner_len, reference_len, *, fill_backwards=True):
     """
     Generates a complete map from learner frames to reference frames.
 
@@ -142,6 +233,10 @@ def build_alignments(path, learner_len, reference_len):
         reference_len (int): 
             The total number of frames in the reference sequence. This is
             used as the fill value for insertions at the end of the path.
+        fill_backwards (bool):
+            If `True`, insertions in the learner sequence are filled
+            with the next valid reference frame found during backward
+            traversal. If `False`, they are filled with `-1`.
 
     Returns:
         np.ndarray: 
@@ -156,7 +251,10 @@ def build_alignments(path, learner_len, reference_len):
         if learner_idx is None:
             continue
         if reference_idx is None:
-            filled_map[learner_idx] = last_ref_idx
+            if fill_backwards:
+                filled_map[learner_idx] = last_ref_idx
+            else:
+                filled_map[learner_idx] = -1
         else:
             filled_map[learner_idx] = reference_idx
             last_ref_idx = reference_idx
