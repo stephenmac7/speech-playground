@@ -322,14 +322,14 @@
 			/>
 		</div>
 	{/if}
-	<details>
+	<!-- <details>
 		<summary>Details</summary>
 		{#if sylberResult}
 			<p>{JSON.stringify(sylberResult.scores)}</p>
 		{:else}
 			<p>{JSON.stringify(scores)}</p>
 		{/if}
-	</details>
+	</details> -->
 
 	<div class="controls">
 		<fieldset>
