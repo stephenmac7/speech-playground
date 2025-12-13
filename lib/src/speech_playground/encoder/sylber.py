@@ -2,17 +2,16 @@ from typing import Optional
 import torch
 import numpy as np
 from sylber import Segmenter
-from traitlets import List
 
 class SylberEncoder:
     def __init__(self, *, device : Optional[torch.device] = 'cuda'):
         self.segmenter = Segmenter(device=device)
 
-    def encode_one(self, waveform : torch.Tensor, *, validate=True) -> np.ndarray:
+    def encode_one(self, waveform : torch.Tensor, *, validate=True) -> dict:
         assert waveform.ndim == 1, "Input waveform must be 1D (samples,)"
         return self.encode([waveform], validate=validate)[0]
 
-    def encode(self, waveforms : List[torch.Tensor], *, validate=True) -> np.ndarray:
+    def encode(self, waveforms : list[torch.Tensor], *, validate=True) -> list[dict]:
         assert len(waveforms) > 0, "Input waveforms list must not be empty"
         assert waveforms[0].ndim == 1, "Input waveforms must be 1D (samples,)"
         if validate:

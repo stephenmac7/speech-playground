@@ -78,6 +78,7 @@
 	let dist_method = $state("default");
 
 	// Syllable diff
+	let sylber_version = $state("1");
 	let sylberResult: SylberResult | undefined = $state();
 
 	let loading = $state(false);
@@ -211,6 +212,7 @@
 					modelBoundaries = data.modelBoundaries;
 					articulatoryFeatures = data.articulatoryFeatures;
 				} else {
+					formData.append('version', sylber_version);
 					const data = await postJson<SylberResult>(
 						`/api/compare_sylber`,
 						formData,
@@ -438,6 +440,14 @@
 						{/if}
 					</fieldset>
 				</fieldset>
+			{:else if comparisonMode === 'syllable'}
+				<label>
+					Version:
+					<select bind:value={sylber_version}>
+						<option value="1">Sylber 1.0</option>
+						<option value="2">Sylber 2.0</option>
+					</select>
+				</label>
 			{/if}
 		</fieldset>
 
