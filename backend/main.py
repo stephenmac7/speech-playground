@@ -42,10 +42,19 @@ DATA_ROOT = Path(os.getenv("DATA_ROOT"))
 
 
 @lru_cache()
-def get_sylber():
-    from speech_playground.encoder.sylber import SylberEncoder
+def get_sylber(version: int):
+    if version == 1:
+        from speech_playground.encoder.sylber import SylberEncoder
 
-    return SylberEncoder()
+        return SylberEncoder()
+    elif version == 2:
+        from speech_playground.encoder.sylber2 import Sylber2ContentEncoder
+
+        return Sylber2ContentEncoder(
+            checkpoint_path=os.getenv("SYLBER2_CHECKPOINT_PATH")
+        )
+    else:
+        raise ValueError(f"Unsupported Sylber version: {version}")
 
 
 @lru_cache()
@@ -332,7 +341,7 @@ def compare_dpdp_endpoint(
 
 
 @app.post("/compare_sylber")
-def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile = File(...)):
+def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile = File(...), version : int = Form(...)):
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
     xwav = xwav.squeeze(0)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
@@ -342,7 +351,7 @@ def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile
     xwav = (xwav - xwav.mean()) / xwav.std()
     ywav = (ywav - ywav.mean()) / ywav.std()
 
-    sylber = get_sylber()
+    sylber = get_sylber(version=version)
     x = sylber.encode_one(F.resample(xwav, xsr, sylber.sample_rate))
     y = sylber.encode_one(F.resample(ywav, ysr, sylber.sample_rate))
 
