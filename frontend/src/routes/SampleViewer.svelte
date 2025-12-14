@@ -11,7 +11,7 @@
 		zoom = true,
 		layout = 'default',
 		compareWith = null, // TODO: move frameDuration out of this
-		currentFrame = $bindable(),
+		currentFrame = $bindable()
 	} = $props();
 
 	let node: HTMLElement;
@@ -62,9 +62,7 @@
 			if (lastIncludedOtherSegment + 1 >= compareWith.modelBoundaries.length) {
 				return null;
 			}
-			return (
-				compareWith.modelBoundaries[lastIncludedOtherSegment + 1] * compareWith.frameDuration
-			);
+			return compareWith.modelBoundaries[lastIncludedOtherSegment + 1] * compareWith.frameDuration;
 		} else {
 			return (lastIncludedOtherSegment + 1) * compareWith.frameDuration;
 		}
