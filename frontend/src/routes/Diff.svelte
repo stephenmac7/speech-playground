@@ -70,13 +70,14 @@
 	let combineRegions = $state(true);
 	let dpdp = $state(true);
 	let gamma = $state('0.2');
-	let frameDuration = $state(0.02);
 	let scores = $state<number[]>([]);
-	let boundaries = $state<number[] | undefined>();
+	let boundaries = $state<number[]>([]);
 	let modelBoundaries = $state<number[] | undefined>();
 	let alignmentMap = $state<number[] | undefined>();
+	let alignedTimes = $state<number[][] | undefined>();
 	let articulatoryFeatures = $state<number[][] | undefined>();
-	let currentFrame = $state(0);
+	let currentTime = $state(0);
+	const currentFrame = $derived(Math.floor(currentTime * 50));
 
 	// Continuous diff controls
 	let trigger = $state(0.6);
@@ -115,9 +116,9 @@
 	const userRegions = $derived.by(() => {
 		if (comparisonMode === 'fixedRate') {
 			if (discretize) {
-				return buildSegmentRegions(scores, frameDuration, boundaries, combineRegions);
+				return buildSegmentRegions(scores, boundaries, combineRegions);
 			} else {
-				return buildContinuousRegions(scores, frameDuration, trigger, trigger - 0.05);
+				return buildContinuousRegions(scores, boundaries, trigger, trigger - 0.05);
 			}
 		}
 		return sylberResult ? buildSyllableRegions(sylberResult) : ([] as Region[]);
@@ -181,6 +182,7 @@
 			boundaries = undefined;
 			modelBoundaries = undefined;
 			alignmentMap = undefined;
+			alignedTimes = undefined;
 			sylberResult = undefined;
 			articulatoryFeatures = undefined;
 
@@ -193,11 +195,11 @@
 					formData.append('encoder', encoder);
 					let data: {
 						scores: number[];
-						boundaries: number[] | undefined;
+						boundaries: number[];
 						modelBoundaries: number[] | undefined;
-						frameDuration: number;
 						alignmentMap?: number[];
 						articulatoryFeatures?: number[][];
+						alignedTimes?: number[][];
 					};
 					if (discretize) {
 						formData.append('discretizer', discretizer);
@@ -210,9 +212,9 @@
 					} else {
 						data = await postJson(`/api/compare`, formData, controller.signal);
 					}
-					frameDuration = data.frameDuration;
 					scores = data.scores ?? [];
 					alignmentMap = data.alignmentMap ?? [];
+					alignedTimes = data.alignedTimes;
 					boundaries = data.boundaries;
 					modelBoundaries = data.modelBoundaries;
 					articulatoryFeatures = data.articulatoryFeatures;
@@ -224,6 +226,7 @@
 						controller.signal
 					);
 					sylberResult = data;
+					alignedTimes = data.alignedTimes;
 				}
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError') reportError('Error fetching diff.', e);
@@ -313,9 +316,9 @@
 				boundaries,
 				modelBoundaries,
 				alignmentMap: alignmentMap,
-				frameDuration: frameDuration
+				alignedTimes: alignedTimes
 			}}
-			bind:currentFrame
+			bind:currentTime
 			clickToPlay={!articulatoryFeatures}
 		/>
 	</div>
