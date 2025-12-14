@@ -5,8 +5,8 @@
 	let wavesurfer: WaveSurfer;
 	let record: RecordPlugin;
 
-	let actualStartTime : number | undefined = $state();
-	let resolveEndRecording: ((result : { blob: Blob; duration: number }) => void) | undefined;
+	let actualStartTime: number | undefined = $state();
+	let resolveEndRecording: ((result: { blob: Blob; duration: number }) => void) | undefined;
 
 	function waveform(node: HTMLDivElement) {
 		wavesurfer = WaveSurfer.create({
@@ -26,10 +26,10 @@
 		record.on('record-end', (blob: Blob) => {
 			if (resolveEndRecording) {
 				if (!actualStartTime) {
-					throw new Error("Actual start time is undefined on record-end");
+					throw new Error('Actual start time is undefined on record-end');
 				}
 				const duration = performance.now() - actualStartTime;
-				resolveEndRecording({blob, duration});
+				resolveEndRecording({ blob, duration });
 				resolveEndRecording = undefined;
 			}
 			actualStartTime = undefined;
@@ -46,32 +46,32 @@
 	}
 
 	export function startRecording(): Promise<void> {
-        if (!record) {
-            return Promise.reject('Recorder not initialized');
-        }
-        if (record.isRecording()) {
-            return Promise.reject('Recorder is already recording');
-        }
+		if (!record) {
+			return Promise.reject('Recorder not initialized');
+		}
+		if (record.isRecording()) {
+			return Promise.reject('Recorder is already recording');
+		}
 
-        return new Promise((resolve, reject) => {
-            const updateRecordingState = () => {
-                // unfortunate hack
-                const data = (record as any).dataWindow;
-                if (data && data.some((v: number) => v !== 0)) {
+		return new Promise((resolve, reject) => {
+			const updateRecordingState = () => {
+				// unfortunate hack
+				const data = (record as any).dataWindow;
+				if (data && data.some((v: number) => v !== 0)) {
 					actualStartTime = performance.now();
-                    wavesurfer.un('redraw', updateRecordingState);
-                    resolve(); // Resolve the promise now that data is flowing
-                }
-            };
+					wavesurfer.un('redraw', updateRecordingState);
+					resolve(); // Resolve the promise now that data is flowing
+				}
+			};
 
-            wavesurfer.on('redraw', updateRecordingState);
+			wavesurfer.on('redraw', updateRecordingState);
 
-            record.startRecording().catch((err: any) => {
-                wavesurfer.un('redraw', updateRecordingState);
-                reject(err);
-            });
-        });
-    }
+			record.startRecording().catch((err: any) => {
+				wavesurfer.un('redraw', updateRecordingState);
+				reject(err);
+			});
+		});
+	}
 
 	export function stopRecording(): Promise<{ blob: Blob; duration: number }> {
 		if (!record) {

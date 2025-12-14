@@ -16,7 +16,12 @@
 	type ComparisonMode = 'fixedRate' | 'syllable';
 
 	// Encoder config from backend (simplified flat lists)
-	type EncoderOption = { value: string; label: string; discretizers: Array<string>; default_dist_method: string };
+	type EncoderOption = {
+		value: string;
+		label: string;
+		discretizers: Array<string>;
+		default_dist_method: string;
+	};
 	type VoiceModelOption = { value: string; label: string };
 
 	type ModelsResponse = {
@@ -75,10 +80,10 @@
 
 	// Continuous diff controls
 	let trigger = $state(0.6);
-	let dist_method = $state("default");
+	let dist_method = $state('default');
 
 	// Syllable diff
-	let sylber_version = $state("1");
+	let sylber_version = $state('1');
 	let sylberResult: SylberResult | undefined = $state();
 
 	let loading = $state(false);
@@ -196,7 +201,7 @@
 					};
 					if (discretize) {
 						formData.append('discretizer', discretizer);
-					} else if (dist_method !== "default") {
+					} else if (dist_method !== 'default') {
 						formData.append('dist_method', dist_method);
 					}
 					if (discretize && dpdp) {
@@ -221,8 +226,7 @@
 					sylberResult = data;
 				}
 			} catch (e: unknown) {
-				if ((e as { name?: string })?.name !== 'AbortError')
-					reportError('Error fetching diff.', e);
+				if ((e as { name?: string })?.name !== 'AbortError') reportError('Error fetching diff.', e);
 			} finally {
 				loading = false;
 			}
@@ -311,7 +315,7 @@
 				alignmentMap: alignmentMap,
 				frameDuration: frameDuration
 			}}
-			bind:currentFrame={currentFrame}
+			bind:currentFrame
 			clickToPlay={!articulatoryFeatures}
 		/>
 	</div>
@@ -320,7 +324,9 @@
 			<h3>Articulatory Features</h3>
 			<ArticulatoryFeatures
 				learnerFeatures={articulatoryFeatures[1][currentFrame]}
-				referenceFeatures={alignmentMap ? articulatoryFeatures[0][alignmentMap[currentFrame]] : undefined}
+				referenceFeatures={alignmentMap
+					? articulatoryFeatures[0][alignmentMap[currentFrame]]
+					: undefined}
 			/>
 		</div>
 	{/if}
@@ -373,7 +379,12 @@
 							Continuous
 						</label>
 						<label class:disabled={!supportsDiscretize}>
-							<input type="radio" bind:group={discretize} value={true} disabled={!supportsDiscretize} />
+							<input
+								type="radio"
+								bind:group={discretize}
+								value={true}
+								disabled={!supportsDiscretize}
+							/>
 							Discrete
 						</label>
 					</div>
@@ -401,8 +412,11 @@
 								<Tooltip align="left">
 									Dynamic programming method that produces coarser speech units.
 									<br /><br />
-									<i>Word Segmentation on Discovered Phone Units With Dynamic Programming and
-									Self-Supervised Scoring</i> (Herman Kamper).
+									<i
+										>Word Segmentation on Discovered Phone Units With Dynamic Programming and
+										Self-Supervised Scoring</i
+									>
+									(Herman Kamper).
 									<a
 										href="https://doi.org/10.1109/TASLP.2022.3229264"
 										target="_blank"
@@ -428,7 +442,11 @@
 							<label>
 								Distance Method:
 								<select bind:value={dist_method}>
-									<option value="default">Default{selectedEncoderOption ? ` (${selectedEncoderOption.default_dist_method})` : ''}</option>
+									<option value="default"
+										>Default{selectedEncoderOption
+											? ` (${selectedEncoderOption.default_dist_method})`
+											: ''}</option
+									>
 									<option value="euclidean">Euclidean</option>
 									<option value="cosine">Cosine</option>
 								</select>
