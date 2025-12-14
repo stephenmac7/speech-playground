@@ -10,8 +10,8 @@
 		clickToPlay = true,
 		zoom = true,
 		layout = 'default',
-		compareWith = null, // TODO: move frameDuration out of this
-		currentFrame = $bindable()
+		compareWith = null,
+		currentTime = $bindable(0)
 	} = $props();
 
 	let node: HTMLElement;
@@ -19,7 +19,6 @@
 	/* wavesurfer + state */
 	let wavesurfer: WaveSurfer;
 	let playing = $state(false);
-	let time = $state(0);
 	let duration = $state(0);
 	let dragStart: number | undefined = $state();
 
@@ -41,31 +40,34 @@
 		shiftDown = false;
 	}
 
-	function startTimeInOther(segment: number) {
-		if (compareWith.modelBoundaries) {
-			return (
-				compareWith.modelBoundaries[compareWith.alignmentMap[segment]] * compareWith.frameDuration
-			);
-		} else {
-			return compareWith.alignmentMap[segment] * compareWith.frameDuration;
-		}
-	}
-	// segment is exclusive
-	function endTimeInOther(segment: number) {
-		const lastIncludedSegment = segment - 1;
-		if (lastIncludedSegment >= compareWith.alignmentMap.length) {
-			return null;
-		}
-		const lastIncludedOtherSegment = compareWith.alignmentMap[lastIncludedSegment];
-		if (compareWith.modelBoundaries) {
-			// The alignment map can point to the the end of the track (insertion by the learner at the end of the track)
-			if (lastIncludedOtherSegment + 1 >= compareWith.modelBoundaries.length) {
-				return null;
+	function mapTime(t: number): number {
+		if (!compareWith.alignedTimes || compareWith.alignedTimes.length === 0) return 0;
+		const times = compareWith.alignedTimes;
+
+		// Binary search for the interval
+		let low = 0;
+		let high = times.length - 1;
+
+		if (t <= times[0][0]) return times[0][1];
+		if (t >= times[high][0]) return times[high][1];
+
+		while (low <= high) {
+			const mid = Math.floor((low + high) / 2);
+			if (times[mid][0] < t) {
+				low = mid + 1;
+			} else {
+				high = mid - 1;
 			}
-			return compareWith.modelBoundaries[lastIncludedOtherSegment + 1] * compareWith.frameDuration;
-		} else {
-			return (lastIncludedOtherSegment + 1) * compareWith.frameDuration;
 		}
+
+		// low is now the index of the first element > t
+		// so the interval is [low-1, low]
+		const idx = low;
+		const t0 = times[idx - 1];
+		const t1 = times[idx];
+
+		const ratio = (t - t0[0]) / (t1[0] - t0[0]);
+		return t0[1] + ratio * (t1[1] - t0[1]);
 	}
 
 	$effect(() => {
@@ -89,7 +91,7 @@
 			hideScrollbar: !zoom,
 			plugins: plugins
 		});
-		wavesurfer.on('timeupdate', (t) => (time = t));
+		wavesurfer.on('timeupdate', (t) => (currentTime = t));
 		wavesurfer.on('play', () => (playing = true));
 		wavesurfer.on('pause', () => (playing = false));
 		wavesurfer.on('decode', () => (duration = wavesurfer.getDuration()));
@@ -104,12 +106,6 @@
 				if (!dragStart) wavesurfer.play();
 			});
 		}
-		if (compareWith && compareWith.frameDuration) {
-			wavesurfer.on('timeupdate', (currentTime) => {
-				const frame = Math.floor(currentTime / compareWith.frameDuration);
-				currentFrame = frame;
-			});
-		}
 		wavesurfer.on('dragend', (relativeX) => {
 			if (!dragStart) return;
 			const dragEnd = relativeX * duration;
@@ -121,39 +117,12 @@
 				return;
 			}
 			if (playOther) {
-				if (compareWith && compareWith.alignmentMap) {
-					const rawStartFrame = Math.floor(dragStart / compareWith.frameDuration);
-					const rawEndFrame = Math.ceil(dragEnd / compareWith.frameDuration);
-					let startSegment: number, endSegment: number;
-					if (compareWith.boundaries && compareWith.modelBoundaries) {
-						const numSegments = compareWith.boundaries.length - 1;
-						// Find inclusive segment index `startIdx`
-						// Find the last segment `i` whose start time is <= the rawStartFrame
-						startSegment = 0;
-						for (let i = numSegments - 1; i >= 0; i--) {
-							if (compareWith.boundaries[i] <= rawStartFrame) {
-								startSegment = i;
-								break;
-							}
-						}
-
-						// Find exclusive segment index `endSegment`
-						// Find the first boundary index `i` whose start time is >= the rawEndFrame
-						endSegment = numSegments; // Default to exclusive end (N)
-						for (let i = 0; i < compareWith.boundaries.length; i++) {
-							if (compareWith.boundaries[i] >= rawEndFrame) {
-								endSegment = i;
-								break;
-							}
-						}
-						// If drag is past the end, loop finishes and endSegment remains N, which is correct.
-					} else {
-						startSegment = rawStartFrame;
-						endSegment = rawEndFrame;
-					}
-					const otherStartTime = startTimeInOther(startSegment);
-					const otherEndTime = endTimeInOther(endSegment);
+				if (compareWith && compareWith.alignedTimes) {
+					const otherStartTime = mapTime(dragStart);
+					const otherEndTime = mapTime(dragEnd);
 					compareWith.other.play(otherStartTime, otherEndTime);
+				} else {
+					console.warn('No compareWith data to play other audio.');
 				}
 			} else {
 				wavesurfer.play(dragStart, dragEnd);
@@ -169,10 +138,9 @@
 				regionsPlugin.on('region-clicked', (region, e) => {
 					e.stopPropagation();
 					if (e.shiftKey) {
-						if (compareWith && compareWith.alignmentMap) {
-							const [startFrame, endFrame] = region.id.split('-').slice(1).map(Number);
-							const otherStartTime = startTimeInOther(startFrame);
-							const otherEndTime = endTimeInOther(endFrame);
+						if (compareWith && compareWith.alignedTimes) {
+							const otherStartTime = mapTime(region.start);
+							const otherEndTime = mapTime(region.end);
 							compareWith.other.play(otherStartTime, otherEndTime);
 						}
 					} else {
@@ -243,7 +211,7 @@
 	{/if}
 	<div class="labels" style:--height={height + 'px'}>
 		{#if layout !== 'compact'}
-			<span id="time">{time !== null ? format(time) : '--:--'}</span>
+			<span id="time">{format(currentTime)}</span>
 		{/if}
 		<div id="wavesurfer" bind:this={node}></div>
 		<span id="duration">{duration ? format(duration) : '--:--'}</span>

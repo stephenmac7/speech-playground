@@ -221,6 +221,8 @@ def compare_endpoint(
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
 
+    frame_duration = model.frame_duration
+
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
     xwav = model.resample(xwav.squeeze(0), xsr)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
@@ -237,11 +239,22 @@ def compare_endpoint(
     else:
         extra_results = {}
 
+    aligned_times = []
     if discretizer is not None:
         xtokens = model.discretize(x, discretizer)
         ytokens = model.discretize(y, discretizer)
         scores, path = score_frames(ytokens, xtokens, normalize=True)
         alignment_map = build_alignments(path, len(ytokens), len(xtokens))
+
+        last_match = None
+        for y_idx, x_idx in path:
+            if y_idx is not None and x_idx is not None:
+                aligned_times.append([y_idx * model.frame_duration, x_idx * model.frame_duration])
+                last_match = (y_idx, x_idx)
+        
+        if last_match:
+            y_idx, x_idx = last_match
+            aligned_times.append([(y_idx + 1) * frame_duration, (x_idx + 1) * frame_duration])
     else:
         x = model.to_continuous_features(x)
         y = model.to_continuous_features(y)
@@ -269,6 +282,19 @@ def compare_endpoint(
         else:
             scores = y_positions
 
+        idx1 = alignment.index1
+        idx2 = alignment.index2
+        
+        aligned_times = np.column_stack((
+            idx2 * model.frame_duration,
+            idx1 * model.frame_duration
+        )).tolist()
+        
+        if len(idx1) > 0:
+            last_x = idx1[-1]
+            last_y = idx2[-1]
+            aligned_times.append([(last_y + 1) * frame_duration, (last_x + 1) * frame_duration])
+
         # visualize path for debugging
         # plt.imshow(cosine_sims, aspect="auto", origin="lower")
         # plt.colorbar()
@@ -289,10 +315,23 @@ def compare_endpoint(
     # plot_waveform(ywav, sr, agreement_scores=y_positions)
     # plt.savefig("/tmp/comparison.png")
     # plt.close()
+    
+    # Convert boundaries to seconds
+    if discretizer is not None:
+        # For discrete (non-DPDP), boundaries are just frame boundaries
+        boundaries = [i * frame_duration for i in range(len(ytokens) + 1)]
+        modelBoundaries = [i * frame_duration for i in range(len(xtokens) + 1)]
+    else:
+        # For continuous, boundaries are just frame boundaries
+        boundaries = [i * frame_duration for i in range(len(y) + 1)]
+        modelBoundaries = [i * frame_duration for i in range(len(x) + 1)]
+
     return {
         "scores": scores.tolist(),
-        "frameDuration": model.frame_duration,
+        "boundaries": boundaries,
+        "modelBoundaries": modelBoundaries,
         "alignmentMap": alignment_map.tolist(),
+        "alignedTimes": aligned_times,
         **extra_results
     }
 
@@ -331,12 +370,31 @@ def compare_dpdp_endpoint(
     for j in range(len(ycodes)):
         alignment_map[j] = alignment_map_codes[j]
 
+    aligned_times = []
+    last_match = None
+    for y_idx, x_idx in path:
+        if y_idx is not None and x_idx is not None:
+            y_start = yboundaries[y_idx] * model.frame_duration
+            x_start = xboundaries[x_idx] * model.frame_duration
+            aligned_times.append([y_start, x_start])
+            last_match = (y_idx, x_idx)
+            
+    if last_match:
+        y_idx, x_idx = last_match
+        y_end = yboundaries[y_idx+1] * model.frame_duration
+        x_end = xboundaries[x_idx+1] * model.frame_duration
+        aligned_times.append([y_end, x_end])
+
+    # Convert boundaries to seconds
+    boundaries = [b * model.frame_duration for b in yboundaries]
+    modelBoundaries = [b * model.frame_duration for b in xboundaries]
+
     return {
         "scores": y_mismatches.tolist(),
-        "boundaries": yboundaries.tolist(),
-        "modelBoundaries": xboundaries.tolist(),
-        "frameDuration": model.frame_duration,
+        "boundaries": boundaries,
+        "modelBoundaries": modelBoundaries,
         "alignmentMap": alignment_map.tolist(),
+        "alignedTimes": aligned_times,
     }
 
 
@@ -359,13 +417,25 @@ def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile
     ysegments = y["segments"].tolist()
 
     scores, path = score_continuous_frames(y["segment_features"], x["segment_features"], normalize=True)
-    alignment_map = build_alignments(path, len(ysegments), len(xsegments), fill_backwards=False)
+    y_to_x_mappings = build_alignments(path, len(ysegments), len(xsegments), fill_backwards=False)
+
+    aligned_times = []
+    last_match = None
+    for y_idx, x_idx in path:
+        if y_idx is not None and x_idx is not None:
+            aligned_times.append([ysegments[y_idx][0], xsegments[x_idx][0]])
+            last_match = (y_idx, x_idx)
+
+    if last_match:
+        y_idx, x_idx = last_match
+        aligned_times.append([ysegments[y_idx][1], xsegments[x_idx][1]])
 
     result = {
-        "scores": scores.tolist(), #y_avg_score.tolist(),
+        "scores": scores.tolist(),
         "xsegments": xsegments,
         "ysegments": ysegments,
-        "y_to_x_mappings": alignment_map.tolist(), #y_to_x_mappings,
+        "y_to_x_mappings": y_to_x_mappings.tolist(),
+        "alignedTimes": aligned_times,
     }
     return result
 

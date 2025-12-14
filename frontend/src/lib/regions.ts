@@ -8,11 +8,12 @@ export type SylberResult = {
 	xsegments: number[][];
 	ysegments: number[][];
 	y_to_x_mappings: number[];
+	alignedTimes: number[][];
 };
 
 export function buildContinuousRegions(
 	allScores: number[],
-	frameDur: number,
+	boundaries: number[],
 	trigger: number,
 	min: number
 ): Region[] {
@@ -22,7 +23,7 @@ export function buildContinuousRegions(
 	let current: { start: number; scores: number[] } | undefined;
 
 	const createRegion = (startFrame: number, endFrame: number, scores: number[]) => {
-		const duration = scores.length * frameDur;
+		const duration = boundaries[endFrame] - boundaries[startFrame];
 		if (duration < 0.1) return; // Ignore very short regions
 
 		const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
@@ -37,8 +38,8 @@ export function buildContinuousRegions(
 
 		regions.push({
 			id: `region-${startFrame}-${endFrame}`,
-			start: startFrame * frameDur,
-			end: endFrame * frameDur,
+			start: boundaries[startFrame],
+			end: boundaries[endFrame],
 			color: `rgba(255, 0, 0, ${opacity})`,
 			content: String(avg.toFixed(2))
 		});
@@ -76,8 +77,7 @@ export function buildContinuousRegions(
 
 export function buildCombinedSegmentRegions(
 	scores: number[], // size N
-	frameDur: number,
-	boundaries: number[] | undefined // size N+1
+	boundaries: number[] // size N+1
 ): Region[] {
 	const regions: Region[] = [];
 	let currentRegion: { startFrame: number; scores: number[] } | undefined;
@@ -88,8 +88,8 @@ export function buildCombinedSegmentRegions(
 		const opacity = 0.8 * (1 - avg);
 		regions.push({
 			id: `region-${region.startFrame}-${region.endFrame}`,
-			start: boundaries ? boundaries[region.startFrame] * frameDur : region.startFrame * frameDur,
-			end: boundaries ? boundaries[region.endFrame] * frameDur : region.endFrame * frameDur,
+			start: boundaries[region.startFrame],
+			end: boundaries[region.endFrame],
 			color: `rgba(255, 0, 0, ${opacity})`,
 			content: String(avg.toFixed(2))
 		});
@@ -136,12 +136,11 @@ export function buildCombinedSegmentRegions(
 
 export function buildSegmentRegions(
 	scores: number[], // size N
-	frameDur: number,
-	boundaries: number[] | undefined, // size N+1
+	boundaries: number[], // size N+1
 	combineRegions: boolean = false
 ): Region[] {
 	if (combineRegions) {
-		return buildCombinedSegmentRegions(scores, frameDur, boundaries);
+		return buildCombinedSegmentRegions(scores, boundaries);
 	}
 	const regions: Region[] = [];
 	scores.forEach((score, i) => {
@@ -151,8 +150,8 @@ export function buildSegmentRegions(
 			const endFrame = i + 1;
 			regions.push({
 				id: `region-${startFrame}-${endFrame}`,
-				start: boundaries ? boundaries[startFrame] * frameDur : startFrame * frameDur,
-				end: boundaries ? boundaries[endFrame] * frameDur : endFrame * frameDur,
+				start: boundaries[startFrame],
+				end: boundaries[endFrame],
 				color: `rgba(255, 0, 0, ${opacity})`,
 				content: ''
 			});

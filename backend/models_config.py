@@ -195,6 +195,7 @@ class InversionMetadata(ModelMetadata):
     slug = "inversion"
     name = "Articulatory Inversion"
 
+    @lru_cache()
     def load(self):
         from speech_playground.encoder.articulatory_inversion import ArticulatoryInversionEncoder
 
