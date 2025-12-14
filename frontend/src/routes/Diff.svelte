@@ -5,9 +5,7 @@
 	import {
 		buildContinuousRegions,
 		buildSegmentRegions,
-		buildSyllableRegions,
-		type Region,
-		type SylberResult
+		type Region
 	} from '$lib/regions';
 	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
@@ -21,6 +19,7 @@
 		label: string;
 		discretizers: Array<string>;
 		default_dist_method: string;
+		has_fixed_frame_rate: boolean;
 	};
 	type VoiceModelOption = { value: string; label: string };
 
@@ -56,9 +55,6 @@
 	// ---------- Model viewer (for control from sample viewer) ----------
 	let modelViewer: SampleViewer | undefined = $state();
 
-	// ---------- Comparison controls ----------
-	let comparisonMode = $state<ComparisonMode>('fixedRate');
-
 	// Dynamic encoder options (fetched from backend)
 	let encoderOptions = $state<EncoderOption[]>([]);
 	let vcModelOptions = $state<VoiceModelOption[]>([]);
@@ -71,21 +67,17 @@
 	let dpdp = $state(true);
 	let gamma = $state('0.2');
 	let scores = $state<number[]>([]);
-	let boundaries = $state<number[]>([]);
-	let modelBoundaries = $state<number[] | undefined>();
 	let alignmentMap = $state<number[] | undefined>();
 	let alignedTimes = $state<number[][] | undefined>();
 	let articulatoryFeatures = $state<number[][] | undefined>();
+	let learnerSegments = $state<number[][] | undefined>();
+	let modelSegments = $state<number[][] | undefined>();
 	let currentTime = $state(0);
 	const currentFrame = $derived(Math.floor(currentTime * 50));
 
 	// Continuous diff controls
 	let trigger = $state(0.6);
 	let dist_method = $state('default');
-
-	// Syllable diff
-	let sylber_version = $state('1');
-	let sylberResult: SylberResult | undefined = $state();
 
 	let loading = $state(false);
 
@@ -99,29 +91,58 @@
 
 	// ---------- Derived regions ----------
 	const modelRegions = $derived.by(() => {
-		if (comparisonMode !== 'syllable' || !sylberResult) return [] as Region[];
-		// Visualize model syllables by index
-		return sylberResult.xsegments.map((segment, i) => ({
-			start: segment[0],
-			end: segment[1],
-			content: (() => {
-				const el = document.createElement('span');
-				el.textContent = i.toString();
-				return el;
-			})(),
-			color: 'rgba(0, 0, 255, 0.2)'
-		}));
+		const isFixedRate = selectedEncoderOption?.has_fixed_frame_rate ?? true;
+
+		if (isFixedRate) {
+			return [] as Region[];
+		}
+
+		if (modelSegments) {
+			return modelSegments.map((segment, i) => ({
+				id: `model-segment-${i}`,
+				start: segment[0],
+				end: segment[1],
+				content: (() => {
+					const el = document.createElement('span');
+					el.textContent = i.toString();
+					return el;
+				})(),
+				color: 'rgba(0, 0, 255, 0.2)'
+			}));
+		}
+		return [] as Region[];
 	});
 
 	const userRegions = $derived.by(() => {
-		if (comparisonMode === 'fixedRate') {
-			if (discretize) {
-				return buildSegmentRegions(scores, boundaries, combineRegions);
+		const isFixedRate = selectedEncoderOption?.has_fixed_frame_rate ?? true;
+
+		if (learnerSegments) {
+			if (alignmentMap && !isFixedRate) {
+				// Variable rate / segments mode (e.g. Sylber)
+				return learnerSegments.map((segment, i) => {
+					const score = scores[i];
+					let opacity = 0;
+					if (score < trigger) {
+						opacity = 0.8 * ((trigger - score) / trigger);
+					}
+					const modelIndex = alignmentMap![i];
+					return {
+						id: 'syllable-' + i,
+						start: segment[0],
+						end: segment[1],
+						color: `rgba(255, 0, 0, ${opacity})`,
+						content: modelIndex === -1 ? '' : modelIndex.toString()
+					};
+				});
 			} else {
-				return buildContinuousRegions(scores, boundaries, trigger, trigger - 0.05);
+				if (discretize) {
+					return buildSegmentRegions(scores, learnerSegments, combineRegions);
+				} else {
+					return buildContinuousRegions(scores, learnerSegments, trigger, trigger - 0.05);
+				}
 			}
 		}
-		return sylberResult ? buildSyllableRegions(sylberResult) : ([] as Region[]);
+		return [] as Region[];
 	});
 
 	// Audio to compare (may be converted/reconstructed)
@@ -179,11 +200,10 @@
 
 			loading = true;
 			scores = [];
-			boundaries = undefined;
-			modelBoundaries = undefined;
 			alignmentMap = undefined;
 			alignedTimes = undefined;
-			sylberResult = undefined;
+			learnerSegments = undefined;
+			modelSegments = undefined;
 			articulatoryFeatures = undefined;
 
 			const formData = new FormData();
@@ -191,43 +211,32 @@
 			formData.append('model_file', modelForComparison, 'model.wav');
 
 			try {
-				if (comparisonMode === 'fixedRate') {
-					formData.append('encoder', encoder);
-					let data: {
-						scores: number[];
-						boundaries: number[];
-						modelBoundaries: number[] | undefined;
-						alignmentMap?: number[];
-						articulatoryFeatures?: number[][];
-						alignedTimes?: number[][];
-					};
-					if (discretize) {
-						formData.append('discretizer', discretizer);
-					} else if (dist_method !== 'default') {
-						formData.append('dist_method', dist_method);
-					}
-					if (discretize && dpdp) {
-						formData.append('gamma', gamma);
-						data = await postJson(`/api/compare_dpdp`, formData, controller.signal);
-					} else {
-						data = await postJson(`/api/compare`, formData, controller.signal);
-					}
-					scores = data.scores ?? [];
-					alignmentMap = data.alignmentMap ?? [];
-					alignedTimes = data.alignedTimes;
-					boundaries = data.boundaries;
-					modelBoundaries = data.modelBoundaries;
-					articulatoryFeatures = data.articulatoryFeatures;
-				} else {
-					formData.append('version', sylber_version);
-					const data = await postJson<SylberResult>(
-						`/api/compare_sylber`,
-						formData,
-						controller.signal
-					);
-					sylberResult = data;
-					alignedTimes = data.alignedTimes;
+				formData.append('encoder', encoder);
+				let data: {
+					scores: number[];
+					alignmentMap?: number[];
+					articulatoryFeatures?: number[][];
+					alignedTimes?: number[][];
+					learnerSegments?: number[][];
+					modelSegments?: number[][];
+				};
+				if (discretize) {
+					formData.append('discretizer', discretizer);
+				} else if (dist_method !== 'default') {
+					formData.append('dist_method', dist_method);
 				}
+				if (discretize && dpdp) {
+					formData.append('gamma', gamma);
+					data = await postJson(`/api/compare_dpdp`, formData, controller.signal);
+				} else {
+					data = await postJson(`/api/compare`, formData, controller.signal);
+				}
+				scores = data.scores ?? [];
+				alignmentMap = data.alignmentMap;
+				alignedTimes = data.alignedTimes;
+				articulatoryFeatures = data.articulatoryFeatures;
+				learnerSegments = data.learnerSegments;
+				modelSegments = data.modelSegments;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError') reportError('Error fetching diff.', e);
 			} finally {
@@ -313,8 +322,8 @@
 			regions={userRegions}
 			compareWith={{
 				other: modelViewer,
-				boundaries,
-				modelBoundaries,
+				learnerSegments,
+				modelSegments,
 				alignmentMap: alignmentMap,
 				alignedTimes: alignedTimes
 			}}
@@ -344,132 +353,109 @@
 
 	<div class="controls">
 		<fieldset>
-			<legend>Comparison Mode</legend>
+			<legend>Comparison</legend>
+			<label>
+				Encoder:
+				<select
+					bind:value={encoder}
+					onchange={() => {
+						if (!supportsDiscretize) discretize = false;
+					}}
+				>
+					{#if encoderOptions.length}
+						{#each encoderOptions as opt}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					{:else}
+						<!-- Fallback: HuBERT only until list loads -->
+						<option value="hubert_l7">HuBERT L7</option>
+					{/if}
+				</select>
+			</label>
 			<div class="radio-group">
 				<label>
-					<input type="radio" bind:group={comparisonMode} value="fixedRate" />
-					Fixed Rate
+					<input type="radio" bind:group={discretize} value={false} />
+					Continuous
 				</label>
-				<label>
-					<input type="radio" bind:group={comparisonMode} value="syllable" />
-					Syllable
+				<label class:disabled={!supportsDiscretize}>
+					<input
+						type="radio"
+						bind:group={discretize}
+						value={true}
+						disabled={!supportsDiscretize}
+					/>
+					Discrete
 				</label>
 			</div>
-			{#if comparisonMode === 'fixedRate'}
-				<fieldset class="sub-fieldset">
-					<legend>Comparison</legend>
+			<fieldset class="sub-fieldset">
+				{#if discretize}
 					<label>
-						Encoder:
-						<select
-							bind:value={encoder}
-							onchange={() => {
-								if (!supportsDiscretize) discretize = false;
-							}}
-						>
-							{#if encoderOptions.length}
-								{#each encoderOptions as opt}
-									<option value={opt.value}>{opt.label}</option>
+						Discretizer:
+						<select bind:value={discretizer}>
+							{#if supportsDiscretize && selectedEncoderOption}
+								{#each selectedEncoderOption.discretizers as opt}
+									<option value={opt}>{opt}</option>
 								{/each}
 							{:else}
-								<!-- Fallback: HuBERT only until list loads -->
-								<option value="hubert_l7">HuBERT L7</option>
+								<!-- Fallback: bshall only until list loads -->
+								<option value="bshall">bshall</option>
 							{/if}
 						</select>
 					</label>
-					<div class="radio-group">
-						<label>
-							<input type="radio" bind:group={discretize} value={false} />
-							Continuous
-						</label>
-						<label class:disabled={!supportsDiscretize}>
-							<input
-								type="radio"
-								bind:group={discretize}
-								value={true}
-								disabled={!supportsDiscretize}
-							/>
-							Discrete
-						</label>
-					</div>
-					<fieldset class="sub-fieldset">
-						{#if discretize}
-							<label>
-								Discretizer:
-								<select bind:value={discretizer}>
-									{#if supportsDiscretize && selectedEncoderOption}
-										{#each selectedEncoderOption.discretizers as opt}
-											<option value={opt}>{opt}</option>
-										{/each}
-									{:else}
-										<!-- Fallback: bshall only until list loads -->
-										<option value="bshall">bshall</option>
-									{/if}
-								</select>
-							</label>
-							<label>
-								Combine Regions:
-								<input type="checkbox" bind:checked={combineRegions} />
-							</label>
-							<label class="label-with-tooltip">
-								<span>DPDP:</span>
-								<Tooltip align="left">
-									Dynamic programming method that produces coarser speech units.
-									<br /><br />
-									<i
-										>Word Segmentation on Discovered Phone Units With Dynamic Programming and
-										Self-Supervised Scoring</i
-									>
-									(Herman Kamper).
-									<a
-										href="https://doi.org/10.1109/TASLP.2022.3229264"
-										target="_blank"
-										rel="noopener noreferrer"
-									>
-										doi:10.1109/TASLP.2022.3229264
-									</a>
-								</Tooltip>
-								<input type="checkbox" bind:checked={dpdp} />
-							</label>
-							<label class:disabled={!dpdp}>
-								Gamma: {gamma}
-								<input
-									type="range"
-									min="0.0"
-									max="1.0"
-									step="0.1"
-									bind:value={gamma}
-									disabled={!dpdp}
-								/>
-							</label>
-						{:else}
-							<label>
-								Distance Method:
-								<select bind:value={dist_method}>
-									<option value="default"
-										>Default{selectedEncoderOption
-											? ` (${selectedEncoderOption.default_dist_method})`
-											: ''}</option
-									>
-									<option value="euclidean">Euclidean</option>
-									<option value="cosine">Cosine</option>
-								</select>
-							</label>
-							<label>
-								Trigger:
-								<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />
-							</label>
-						{/if}
-					</fieldset>
-				</fieldset>
-			{:else if comparisonMode === 'syllable'}
-				<label>
-					Version:
-					<select bind:value={sylber_version}>
-						<option value="1">Sylber 1.0</option>
-						<option value="2">Sylber 2.0</option>
-					</select>
-				</label>
-			{/if}
+					<label>
+						Combine Regions:
+						<input type="checkbox" bind:checked={combineRegions} />
+					</label>
+					<label class="label-with-tooltip">
+						<span>DPDP:</span>
+						<Tooltip align="left">
+							Dynamic programming method that produces coarser speech units.
+							<br /><br />
+							<i
+								>Word Segmentation on Discovered Phone Units With Dynamic Programming and
+								Self-Supervised Scoring</i
+							>
+							(Herman Kamper).
+							<a
+								href="https://doi.org/10.1109/TASLP.2022.3229264"
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								doi:10.1109/TASLP.2022.3229264
+							</a>
+						</Tooltip>
+						<input type="checkbox" bind:checked={dpdp} />
+					</label>
+					<label class:disabled={!dpdp}>
+						Gamma: {gamma}
+						<input
+							type="range"
+							min="0.0"
+							max="1.0"
+							step="0.1"
+							bind:value={gamma}
+							disabled={!dpdp}
+						/>
+					</label>
+				{:else}
+					<label>
+						Distance Method:
+						<select bind:value={dist_method}>
+							<option value="default"
+								>Default{selectedEncoderOption
+									? ` (${selectedEncoderOption.default_dist_method})`
+									: ''}</option
+							>
+							<option value="euclidean">Euclidean</option>
+							<option value="cosine">Cosine</option>
+						</select>
+					</label>
+					<label>
+						Trigger:
+						<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />
+					</label>
+				{/if}
+			</fieldset>
 		</fieldset>
 
 		<fieldset>

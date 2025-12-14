@@ -13,7 +13,7 @@ export type SylberResult = {
 
 export function buildContinuousRegions(
 	allScores: number[],
-	boundaries: number[],
+	segments: number[][],
 	trigger: number,
 	min: number
 ): Region[] {
@@ -23,7 +23,9 @@ export function buildContinuousRegions(
 	let current: { start: number; scores: number[] } | undefined;
 
 	const createRegion = (startFrame: number, endFrame: number, scores: number[]) => {
-		const duration = boundaries[endFrame] - boundaries[startFrame];
+		const startTime = segments[startFrame][0];
+		const endTime = segments[endFrame - 1][1];
+		const duration = endTime - startTime;
 		if (duration < 0.1) return; // Ignore very short regions
 
 		const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
@@ -38,8 +40,8 @@ export function buildContinuousRegions(
 
 		regions.push({
 			id: `region-${startFrame}-${endFrame}`,
-			start: boundaries[startFrame],
-			end: boundaries[endFrame],
+			start: startTime,
+			end: endTime,
 			color: `rgba(255, 0, 0, ${opacity})`,
 			content: String(avg.toFixed(2))
 		});
@@ -77,7 +79,7 @@ export function buildContinuousRegions(
 
 export function buildCombinedSegmentRegions(
 	scores: number[], // size N
-	boundaries: number[] // size N+1
+	segments: number[][] // size N
 ): Region[] {
 	const regions: Region[] = [];
 	let currentRegion: { startFrame: number; scores: number[] } | undefined;
@@ -88,8 +90,8 @@ export function buildCombinedSegmentRegions(
 		const opacity = 0.8 * (1 - avg);
 		regions.push({
 			id: `region-${region.startFrame}-${region.endFrame}`,
-			start: boundaries[region.startFrame],
-			end: boundaries[region.endFrame],
+			start: segments[region.startFrame][0],
+			end: segments[region.endFrame - 1][1],
 			color: `rgba(255, 0, 0, ${opacity})`,
 			content: String(avg.toFixed(2))
 		});
@@ -136,11 +138,11 @@ export function buildCombinedSegmentRegions(
 
 export function buildSegmentRegions(
 	scores: number[], // size N
-	boundaries: number[], // size N+1
+	segments: number[][], // size N
 	combineRegions: boolean = false
 ): Region[] {
 	if (combineRegions) {
-		return buildCombinedSegmentRegions(scores, boundaries);
+		return buildCombinedSegmentRegions(scores, segments);
 	}
 	const regions: Region[] = [];
 	scores.forEach((score, i) => {
@@ -150,29 +152,12 @@ export function buildSegmentRegions(
 			const endFrame = i + 1;
 			regions.push({
 				id: `region-${startFrame}-${endFrame}`,
-				start: boundaries[startFrame],
-				end: boundaries[endFrame],
+				start: segments[startFrame][0],
+				end: segments[endFrame - 1][1],
 				color: `rgba(255, 0, 0, ${opacity})`,
 				content: ''
 			});
 		}
-	});
-	return regions;
-}
-
-export function buildSyllableRegions(result: SylberResult): Region[] {
-	const regions: Region[] = [];
-	result.scores.forEach((score, i) => {
-		const opacity = 0.8 * (1 - score);
-		const modelIndex = result.y_to_x_mappings[i];
-		regions.push({
-			id: 'syllable-' + i,
-			start: result.ysegments[i][0],
-			end: result.ysegments[i][1],
-			color: `rgba(255, 0, 0, ${opacity})`,
-			// content: result.y_to_x_mappings[i].map((idx) => idx.toString()).join(', ')
-			content: modelIndex === -1 ? '' : modelIndex.toString()
-		});
 	});
 	return regions;
 }

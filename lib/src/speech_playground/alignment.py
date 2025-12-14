@@ -171,7 +171,7 @@ def score_continuous_frames(learner, reference, *, gap_penalty=-0.5, normalize=F
 
     return x_penalties, alignment_path
 
-def plot_waveform(waveform, sample_rate, *, agreement_scores):
+def plot_waveform(waveform, sample_rate, *, agreement_scores, frame_duration=0.02):
     waveform = waveform.numpy()
 
     num_channels, num_frames = waveform.shape
@@ -193,7 +193,7 @@ def plot_waveform(waveform, sample_rate, *, agreement_scores):
 
     shading_intensity = (shade*0.8).reshape(1, -1)
 
-    time_mesh_coordinates = np.arange(0, len(agreement_scores)+1) * 0.02
+    time_mesh_coordinates = np.arange(0, len(agreement_scores)+1) * frame_duration
     ymin, ymax = ax[0].get_ylim()
     mesh = ax[0].pcolormesh(
         time_mesh_coordinates,

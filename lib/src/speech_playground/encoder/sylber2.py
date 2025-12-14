@@ -1,6 +1,5 @@
 from typing import Optional
 import torch
-import numpy as np
 from sylber2_encoder import Sylber2
 import importlib
 import os

@@ -24,7 +24,7 @@ import dtw
 import torchaudio
 import torchaudio.functional as F
 
-from speech_playground.alignment import score_frames, score_continuous_frames, build_alignments
+from speech_playground.alignment import score_frames, build_alignments, score_continuous_frames
 
 # Loads from backend/.env
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
@@ -39,22 +39,6 @@ from models_config import (
 
 # Base directory for /data endpoint
 DATA_ROOT = Path(os.getenv("DATA_ROOT"))
-
-
-@lru_cache()
-def get_sylber(version: int):
-    if version == 1:
-        from speech_playground.encoder.sylber import SylberEncoder
-
-        return SylberEncoder()
-    elif version == 2:
-        from speech_playground.encoder.sylber2 import Sylber2ContentEncoder
-
-        return Sylber2ContentEncoder(
-            checkpoint_path=os.getenv("SYLBER2_CHECKPOINT_PATH")
-        )
-    else:
-        raise ValueError(f"Unsupported Sylber version: {version}")
 
 
 @lru_cache()
@@ -107,7 +91,9 @@ def get_encoders():
             "label": model.name,
             "discretizers": model.discretizers(),
             "default_dist_method": model.default_dist_method,
-        } for model in MODELS
+            "has_fixed_frame_rate": model.has_fixed_frame_rate,
+        }
+        for model in MODELS
     }
 
 
@@ -117,9 +103,7 @@ def models_endpoint():
     Tells the frontend what models are available. Returns flat lists for UI simplicity.
     """
     encoders = [{"value": k, **v} for k, v in get_encoders().items()]
-    vc_models = [
-        {"value": model["variant"], "label": model["name"]} for model in KANADE_MODELS
-    ]
+    vc_models = [{"value": model["variant"], "label": model["name"]} for model in KANADE_MODELS]
 
     return {
         "encoders": encoders,
@@ -221,8 +205,6 @@ def compare_endpoint(
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
 
-    frame_duration = model.frame_duration
-
     xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
     xwav = model.resample(xwav.squeeze(0), xsr)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
@@ -233,6 +215,9 @@ def compare_endpoint(
     y = model.encode(ywav)
     end_time = time.time()
     print(f"Encoding time for model '{model.slug}': {end_time - start_time:.2f} seconds")
+
+    x_segments = model.get_segments(x)
+    y_segments = model.get_segments(y)
 
     if hasattr(model, "extra_results"):
         extra_results = model.extra_results(x, y)
@@ -249,90 +234,65 @@ def compare_endpoint(
         last_match = None
         for y_idx, x_idx in path:
             if y_idx is not None and x_idx is not None:
-                aligned_times.append([y_idx * model.frame_duration, x_idx * model.frame_duration])
+                aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
                 last_match = (y_idx, x_idx)
-        
+
         if last_match:
             y_idx, x_idx = last_match
-            aligned_times.append([(y_idx + 1) * frame_duration, (x_idx + 1) * frame_duration])
+            aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
     else:
-        x = model.to_continuous_features(x)
-        y = model.to_continuous_features(y)
+        x_feats = model.to_continuous_features(x)
+        y_feats = model.to_continuous_features(y)
         dist_method = dist_method or model.default_dist_method
 
-        alignment = dtw.dtw(x, y, dist_method=dist_method, keep_internals=True)
-        alignment_map = dtw.warp(alignment, index_reference=False)
+        if not model.has_fixed_frame_rate:
+            scores, path = score_continuous_frames(y_feats, x_feats, normalize=True)
+            alignment_map = build_alignments(path, len(y_feats), len(x_feats))
 
-        y_scores_sum = np.zeros(len(y))
-        y_scores_count = np.zeros(len(y))
-
-        for i, j in zip(alignment.index1, alignment.index2):
-            y_scores_sum[j] += alignment.localCostMatrix[i, j] 
-            y_scores_count[j] += 1
-
-        y_positions = np.divide(
-            y_scores_sum,
-            y_scores_count,
-            out=np.full_like(y_scores_sum, np.nan), # Use nan or inf for 0 counts
-            where=y_scores_count != 0,
-        )
-
-        if dist_method == "euclidean":
-            scores = np.exp(model.score_alpha * (y_positions**2))
+            aligned_times = []
+            for y_idx, x_idx in path:
+                if y_idx is not None and x_idx is not None:
+                    aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
+                    aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
         else:
-            scores = y_positions
+            alignment = dtw.dtw(x_feats, y_feats, dist_method=dist_method, keep_internals=True)
+            alignment_map = dtw.warp(alignment, index_reference=False)
 
-        idx1 = alignment.index1
-        idx2 = alignment.index2
-        
-        aligned_times = np.column_stack((
-            idx2 * model.frame_duration,
-            idx1 * model.frame_duration
-        )).tolist()
-        
-        if len(idx1) > 0:
-            last_x = idx1[-1]
-            last_y = idx2[-1]
-            aligned_times.append([(last_y + 1) * frame_duration, (last_x + 1) * frame_duration])
+            y_scores_sum = np.zeros(len(y_feats))
+            y_scores_count = np.zeros(len(y_feats))
 
-        # visualize path for debugging
-        # plt.imshow(cosine_sims, aspect="auto", origin="lower")
-        # plt.colorbar()
-        # plt.title("Cosine Similarity")
-        # plt.xlabel("Y Segments")
-        # plt.ylabel("X Segments")
-        # Overlay the DTW path: x-axis is columns (j -> Y segments), y-axis is rows (i -> X segments)
-        # plt.plot([j for i, j in path], [i for i, j in path], color="red", linewidth=1)
-        # plt.savefig("/tmp/cosine_similarity.png")
-        # plt.close()
-        # plt.figure(figsize=(10,5))
-        # plt.plot(y_positions)
-        # plt.plot(scores)
-        # plt.savefig("/tmp/y_positions.png")
-        # plt.close()
+            for i, j in zip(alignment.index1, alignment.index2):
+                y_scores_sum[j] += alignment.localCostMatrix[i, j]
+                y_scores_count[j] += 1
 
-    # Plot for debugging
-    # plot_waveform(ywav, sr, agreement_scores=y_positions)
-    # plt.savefig("/tmp/comparison.png")
-    # plt.close()
-    
-    # Convert boundaries to seconds
-    if discretizer is not None:
-        # For discrete (non-DPDP), boundaries are just frame boundaries
-        boundaries = [i * frame_duration for i in range(len(ytokens) + 1)]
-        modelBoundaries = [i * frame_duration for i in range(len(xtokens) + 1)]
-    else:
-        # For continuous, boundaries are just frame boundaries
-        boundaries = [i * frame_duration for i in range(len(y) + 1)]
-        modelBoundaries = [i * frame_duration for i in range(len(x) + 1)]
+            y_positions = np.divide(
+                y_scores_sum,
+                y_scores_count,
+                out=np.full_like(y_scores_sum, np.nan),  # Use nan or inf for 0 counts
+                where=y_scores_count != 0,
+            )
+
+            if dist_method == "euclidean":
+                scores = np.exp(model.score_alpha * (y_positions**2))
+            else:
+                scores = y_positions
+
+            aligned_times = []
+            for i, j in zip(alignment.index1, alignment.index2):
+                aligned_times.append([y_segments[j][0], x_segments[i][0]])
+
+            if len(alignment.index1) > 0:
+                last_x = alignment.index1[-1]
+                last_y = alignment.index2[-1]
+                aligned_times.append([y_segments[last_y][1], x_segments[last_x][1]])
 
     return {
         "scores": scores.tolist(),
-        "boundaries": boundaries,
-        "modelBoundaries": modelBoundaries,
         "alignmentMap": alignment_map.tolist(),
         "alignedTimes": aligned_times,
-        **extra_results
+        "learnerSegments": y_segments,
+        "modelSegments": x_segments,
+        **extra_results,
     }
 
 
@@ -378,66 +338,30 @@ def compare_dpdp_endpoint(
             x_start = xboundaries[x_idx] * model.frame_duration
             aligned_times.append([y_start, x_start])
             last_match = (y_idx, x_idx)
-            
+
     if last_match:
         y_idx, x_idx = last_match
-        y_end = yboundaries[y_idx+1] * model.frame_duration
-        x_end = xboundaries[x_idx+1] * model.frame_duration
+        y_end = yboundaries[y_idx + 1] * model.frame_duration
+        x_end = xboundaries[x_idx + 1] * model.frame_duration
         aligned_times.append([y_end, x_end])
 
     # Convert boundaries to seconds
-    boundaries = [b * model.frame_duration for b in yboundaries]
-    modelBoundaries = [b * model.frame_duration for b in xboundaries]
+    y_segments = [
+        [yboundaries[i] * model.frame_duration, yboundaries[i + 1] * model.frame_duration]
+        for i in range(len(yboundaries) - 1)
+    ]
+    x_segments = [
+        [xboundaries[i] * model.frame_duration, xboundaries[i + 1] * model.frame_duration]
+        for i in range(len(xboundaries) - 1)
+    ]
 
     return {
         "scores": y_mismatches.tolist(),
-        "boundaries": boundaries,
-        "modelBoundaries": modelBoundaries,
+        "learnerSegments": y_segments,
+        "modelSegments": x_segments,
         "alignmentMap": alignment_map.tolist(),
         "alignedTimes": aligned_times,
     }
-
-
-@app.post("/compare_sylber")
-def compare_sylber_endpoint(file: UploadFile = File(...), model_file: UploadFile = File(...), version : int = Form(...)):
-    xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
-    xwav = xwav.squeeze(0)
-    ywav, ysr = torchaudio.load_with_torchcodec(file.file)
-    ywav = ywav.squeeze(0)
-
-    # z-score normalization
-    xwav = (xwav - xwav.mean()) / xwav.std()
-    ywav = (ywav - ywav.mean()) / ywav.std()
-
-    sylber = get_sylber(version=version)
-    x = sylber.encode_one(F.resample(xwav, xsr, sylber.sample_rate))
-    y = sylber.encode_one(F.resample(ywav, ysr, sylber.sample_rate))
-
-    xsegments = x["segments"].tolist()
-    ysegments = y["segments"].tolist()
-
-    scores, path = score_continuous_frames(y["segment_features"], x["segment_features"], normalize=True)
-    y_to_x_mappings = build_alignments(path, len(ysegments), len(xsegments), fill_backwards=False)
-
-    aligned_times = []
-    last_match = None
-    for y_idx, x_idx in path:
-        if y_idx is not None and x_idx is not None:
-            aligned_times.append([ysegments[y_idx][0], xsegments[x_idx][0]])
-            last_match = (y_idx, x_idx)
-
-    if last_match:
-        y_idx, x_idx = last_match
-        aligned_times.append([ysegments[y_idx][1], xsegments[x_idx][1]])
-
-    result = {
-        "scores": scores.tolist(),
-        "xsegments": xsegments,
-        "ysegments": ysegments,
-        "y_to_x_mappings": y_to_x_mappings.tolist(),
-        "alignedTimes": aligned_times,
-    }
-    return result
 
 
 @app.post("/convert_voice")
@@ -489,4 +413,3 @@ def reconstruct_endpoint(
     reconstructed_waveform = vocode(vocoder, mel_spectrogram.unsqueeze(0))
 
     return streaming_response_of_audio(reconstructed_waveform, kanade.sample_rate)
-

@@ -3,6 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 import os
 import json
+from typing import Optional
 import numpy as np
 from sklearn.cluster import KMeans
 import torch
@@ -53,7 +54,7 @@ class ModelMetadata(ABC):
         return waveform
 
     @property
-    def frame_duration(self) -> float:
+    def frame_duration(self) -> Optional[float]:
         model = self.load()
         return model.frame_shift
 
@@ -65,6 +66,18 @@ class ModelMetadata(ABC):
     @property
     def default_dist_method(self):
         return "cosine"
+
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return self.frame_duration is not None
+
+    def get_segments(self, encoded):
+        fd = self.frame_duration
+        if fd is None:
+            raise NotImplementedError("This model does not have a fixed frame rate. Please override get_segments().")
+        features = self.to_continuous_features(encoded)
+        length = len(features)
+        return [[i * fd, (i + 1) * fd] for i in range(length)]
 
 HUBERT_KMEANS_PATH = os.getenv("HUBERT_KMEANS_PATH")
 
@@ -226,8 +239,72 @@ class InversionMetadata(ModelMetadata):
     def default_dist_method(self):
         return "euclidean"
 
+class SylberMetadata(ModelMetadata):
+    def discretizers(self):
+        return []
+
+    def to_continuous_features(self, encoded):
+        return encoded["segment_features"]
+
+    @property
+    def frame_duration(self):
+        return None
+
+    def get_segments(self, encoded):
+        return encoded["segments"].tolist()
+
+class SylberV1Metadata(SylberMetadata):
+    def __init__(self):
+        pass
+
+    @property
+    def slug(self) -> str:
+        return "sylber-v1"
+
+    @property
+    def name(self) -> str:
+        return "Sylber v1"
+
+    @lru_cache()
+    def load(self):
+        from speech_playground.encoder.sylber import SylberEncoder
+        return SylberEncoder()
+
+    def encode(self, waveform: torch.Tensor):
+        # Sylber expects normalized audio
+        waveform = (waveform - waveform.mean()) / (waveform.std() + 1e-8)
+        return self.load().encode_one(waveform)
+
+
+class SylberV2Metadata(SylberMetadata):
+    def __init__(self, *, checkpoint_path: str | os.PathLike):
+        self.checkpoint_path = checkpoint_path
+
+    @property
+    def slug(self) -> str:
+        return "sylber-v2"
+
+    @property
+    def name(self) -> str:
+        return "Sylber v2"
+
+    @lru_cache()
+    def load(self):
+        from speech_playground.encoder.sylber2 import Sylber2ContentEncoder
+        return Sylber2ContentEncoder(checkpoint_path=self.checkpoint_path)
+
+    def encode(self, waveform: torch.Tensor):
+        return self.load().encode_one(waveform)
+
+
+SYLBER_MODELS = [SylberV1Metadata()]
+sylber2_checkpoint_path = os.getenv("SYLBER2_CHECKPOINT_PATH")
+if sylber2_checkpoint_path is not None:
+    SYLBER_MODELS.append(SylberV2Metadata(checkpoint_path=sylber2_checkpoint_path))
+
 MODELS = [
     HubertMetadata(),
+    *SYLBER_MODELS,
     *(KanadeMetadata(variant=model["variant"], name=model["name"]) for model in KANADE_MODELS),
 ]
 if INVERSION_TOP is not None:
