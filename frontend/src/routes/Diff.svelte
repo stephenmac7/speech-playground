@@ -295,14 +295,11 @@
 			<Tooltip position="bottom">
 				<b>Playback controls</b>
 				<ul class="tooltip-list">
-					<li>Drag on waveform to play a selection.</li>
-					<li>
-						Hold Shift while dragging to play the corresponding audio in the other track.
-					</li>
-					<li>
-						Click on a region to play it. (Hold Shift to play corresponding audio in the other track.)
-					</li>
+					<li>Click on a waveform to seek.</li>
+					<li>Drag on a waveform to play a selection.</li>
+					<li>Click on a region to play it.</li>
 				</ul>
+				<strong>Tip:</strong> Hold <kbd>Shift</kbd> while doing any of the above to perform these actions on the other track
 			</Tooltip>
 		</div>
 		<SampleViewer
@@ -330,7 +327,6 @@
 				: null}
 			bind:currentTime
 			bind:this={learnerViewer}
-			clickToPlay={!articulatoryFeatures}
 		/>
 	</div>
 	{#if articulatoryFeatures}

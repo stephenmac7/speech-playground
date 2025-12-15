@@ -1,5 +1,6 @@
 <script lang="ts">
 	import WaveSurfer from 'wavesurfer.js';
+	import { onMount } from 'svelte';
 
 	type Region = {
 		start: number;
@@ -9,14 +10,14 @@
 	};
 
 	type CompareWith = {
-		other: { play: (start?: number, end?: number) => void };
+		other: { play: (start?: number, end?: number) => void, seek: (time?: number) => void };
 		alignedTimes?: number[][];
 	};
 
 	let {
 		audio,
 		regions = [],
-		clickToPlay = true,
+		clickToPlay = false,
 		zoom = true,
 		layout = 'default',
 		compareWith = null,
@@ -40,6 +41,7 @@
 	let playing = $state(false);
 	let duration = $state(0);
 	let dragStart: number | undefined = $state();
+	let playButton: HTMLButtonElement | undefined = $state();
 
 	/* For comparing audio */
 	let shiftDown = $state(false);
@@ -48,7 +50,9 @@
 	let height = $derived(layout === 'compact' ? 70 : 128);
 
 	let pxPerSec = $state(0);
+	let isFitToView = $state(true);
 	let accumulatedDelta = 0;
+	let containerWidth = $state(0);
 
 	// Track Shift key globally so drag handlers can read the state reliably
 	function handleKeydown(e: KeyboardEvent) {
@@ -95,10 +99,8 @@
 
 		accumulatedDelta = 0;
 		pxPerSec = newPxPerSec;
+		isFitToView = Math.abs(pxPerSec - minPxPerSec) < 0.001;
 
-		if (scrollWrapper) {
-			scrollWrapper.style.width = `${Math.ceil(duration * pxPerSec)}px`;
-		}
 		wavesurfer.zoom(pxPerSec);
 		waveformContainer.scrollLeft = pointerTime * pxPerSec - x;
 	}
@@ -134,8 +136,8 @@
 		return t0[1] + ratio * (t1[1] - t0[1]);
 	}
 
-	$effect(() => {
-		if (!audio) return;
+	onMount(() => {
+		if (!node) return;
 		wavesurfer = WaveSurfer.create({
 			container: node,
 			waveColor: '#4F4A85',
@@ -152,52 +154,40 @@
 
 		wavesurfer.on('ready', (d) => {
 			duration = d;
-			const wrapper = (wavesurfer as any).renderer.wrapper as HTMLElement;
-			if (wrapper && duration > 0) {
-				if (wavesurfer.options.minPxPerSec === 0) {
-					pxPerSec = wrapper.clientWidth / duration;
-				}
+			if (duration > 0 && wavesurfer.options.minPxPerSec === 0 && containerWidth > 0) {
+				pxPerSec = containerWidth / duration;
 			}
 		});
-
-		wavesurfer.on('redraw', () => {
-			if (!wavesurfer) return;
-			// This runs on initial draw and subsequent redraws.
-			const wrapper = (wavesurfer as any).renderer.wrapper as HTMLElement;
-			if (wrapper && duration > 0) {
-				if (wavesurfer.options.minPxPerSec === 0) {
-					pxPerSec = wrapper.clientWidth / duration;
-				}
-			}
-		});
-
-		if (zoom) {
-			wavesurfer.on('zoom', (newPxPerSec) => {
-				pxPerSec = newPxPerSec;
-			});
-		}
 
 		wavesurfer.on('timeupdate', (t) => {
 			currentTime = t;
 			if (playing && zoom && waveformContainer) {
 				const cursorX = t * pxPerSec;
-				const containerWidth = waveformContainer.clientWidth;
-				const scrollLeft = waveformContainer.scrollLeft;
+				const { scrollLeft, clientWidth } = waveformContainer;
 
-				// Keep cursor centered
-				const targetScrollLeft = cursorX - containerWidth / 2;
-
-				const maxScroll = waveformContainer.scrollWidth - containerWidth;
-				const clampedScroll = Math.max(0, Math.min(targetScrollLeft, maxScroll));
-
-				if (Math.abs(scrollLeft - clampedScroll) > 1) {
-					waveformContainer.scrollLeft = clampedScroll;
+				if (cursorX < scrollLeft) {
+					waveformContainer.scrollLeft = cursorX;
+				} else if (cursorX > scrollLeft + clientWidth) {
+					waveformContainer.scrollLeft += clientWidth / 2;
 				}
 			}
 		});
 		wavesurfer.on('play', () => (playing = true));
 		wavesurfer.on('pause', () => (playing = false));
 		(wavesurfer as any).renderer.initDrag(); // hack to enable drag events without dragToSeek set
+		wavesurfer.on('drag', (relativeX) => {
+			if (zoom && waveformContainer) {
+				const cursorX = relativeX * duration * pxPerSec;
+				const { scrollLeft, clientWidth } = waveformContainer;
+				const minGap = 30;
+
+				if (cursorX + minGap > scrollLeft + clientWidth) {
+					waveformContainer.scrollLeft += minGap;
+				} else if (cursorX - minGap < scrollLeft) {
+					waveformContainer.scrollLeft -= minGap;
+				}
+			}
+		});
 		wavesurfer.on('dragstart', (relativeX) => {
 			wavesurfer.stop();
 			dragStart = relativeX * duration;
@@ -208,6 +198,15 @@
 				if (!dragStart) wavesurfer.play();
 			});
 		}
+		wavesurfer.on('seeking', (currentTime) => {
+			playButton?.focus({focusVisible: false} as any);
+		});
+		wavesurfer.on('click', (relativeX) => {
+			if (shiftDown && compareWith) {
+				const otherTime = mapTime(relativeX * duration);
+				compareWith.other.seek(otherTime);
+			}
+		});
 		wavesurfer.on('dragend', (relativeX) => {
 			if (!dragStart) return;
 			const dragEnd = relativeX * duration;
@@ -233,16 +232,38 @@
 			playOther = false;
 		});
 
-		let cancelled = false;
-
-		wavesurfer.loadBlob(audio);
+		if (audio) {
+			wavesurfer.loadBlob(audio);
+		}
 
 		return () => {
-			cancelled = true;
 			if (wavesurfer) {
 				wavesurfer.destroy();
 			}
 		};
+	});
+
+	$effect(() => {
+		if (isFitToView && duration > 0 && containerWidth > 0) {
+			pxPerSec = containerWidth / duration;
+		}
+	});
+
+	$effect(() => {
+		if (wavesurfer && audio) {
+			duration = 0;
+			wavesurfer.setOptions({ minPxPerSec: 0 });
+			isFitToView = true;
+			pxPerSec = 0;
+			accumulatedDelta = 0;
+			wavesurfer.loadBlob(audio);
+		}
+	});
+
+	$effect(() => {
+		if (wavesurfer) {
+			wavesurfer.setOptions({ height });
+		}
 	});
 
 	function handleRegionClick(region: Region, e: MouseEvent) {
@@ -273,13 +294,18 @@
 			wavesurfer.play(start, end);
 		}
 	}
+
+	export function seek(time?: number) {
+		if (time === undefined || !wavesurfer || time >= duration) return;
+		wavesurfer.seekTo(time / duration);
+	}
 </script>
 
 <svelte:window on:keydown={handleKeydown} on:keyup={handleKeyup} on:blur={handleWindowBlur} />
 
 <div class="sample-viewer" class:compact={layout === 'compact'}>
 	{#if layout !== 'compact'}
-		<button onclick={() => wavesurfer.playPause()}>
+		<button bind:this={playButton} onclick={() => wavesurfer.playPause()}>
 			{#if playing}
 				<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"
 					><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
@@ -295,11 +321,18 @@
 		{#if layout !== 'compact'}
 			<span id="time">{format(currentTime)}</span>
 		{/if}
-		<div class="waveform-container" bind:this={waveformContainer} onwheel={handleWheel}>
+		<div
+			class="waveform-container"
+			bind:this={waveformContainer}
+			bind:clientWidth={containerWidth}
+			onwheel={handleWheel}
+		>
 			<div
 				class="scroll-wrapper"
 				bind:this={scrollWrapper}
-				style:width={zoom && duration && pxPerSec ? Math.ceil(duration * pxPerSec) + 'px' : '100%'}
+				style:width={!isFitToView && zoom && duration && pxPerSec
+					? Math.ceil(duration * pxPerSec) + 'px'
+					: '100%'}
 			>
 				<div id="wavesurfer" bind:this={node}></div>
 				{#if regions.length > 0}
@@ -330,7 +363,7 @@
 		<span id="duration">{duration ? format(duration) : '--:--'}</span>
 	</div>
 	{#if layout === 'compact'}
-		<button onclick={() => wavesurfer.playPause()}>
+		<button bind:this={playButton} onclick={() => wavesurfer.playPause()}>
 			{#if playing}
 				Pause
 			{:else}

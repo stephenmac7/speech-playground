@@ -150,7 +150,7 @@
 					<line x1="6" y1="6" x2="18" y2="18"></line>
 				</svg>
 			</button>
-			<SampleViewer audio={track.data} zoom={false} layout="compact" />
+			<SampleViewer audio={track.data} zoom={false} layout="compact" clickToPlay={true} />
 			<AudioSelector
 				{recorder}
 				bind:value={() => track.data, (blob) => updateTrack(track.id, blob)}
