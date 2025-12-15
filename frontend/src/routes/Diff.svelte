@@ -11,8 +11,6 @@
 	import Tooltip from '$lib/Tooltip.svelte';
 
 	// ---------- Types & helpers ----------
-	type ComparisonMode = 'fixedRate' | 'syllable';
-
 	// Encoder config from backend (simplified flat lists)
 	type EncoderOption = {
 		value: string;
@@ -127,7 +125,7 @@
 					}
 					const modelIndex = alignmentMap![i];
 					return {
-						id: 'syllable-' + i,
+						id: 'segment-' + i,
 						start: segment[0],
 						end: segment[1],
 						color: `rgba(255, 0, 0, ${opacity})`,
@@ -344,11 +342,7 @@
 	{/if}
 	<!-- <details>
 		<summary>Details</summary>
-		{#if sylberResult}
-			<p>{JSON.stringify(sylberResult.scores)}</p>
-		{:else}
-			<p>{JSON.stringify(scores)}</p>
-		{/if}
+		<p>{JSON.stringify(scores)}</p>
 	</details> -->
 
 	<div class="controls">

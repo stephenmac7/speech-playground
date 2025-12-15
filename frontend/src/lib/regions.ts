@@ -3,14 +3,6 @@
 
 export type Region = { id: string; start: number; end: number; content: string; color: string };
 
-export type SylberResult = {
-	scores: number[];
-	xsegments: number[][];
-	ysegments: number[][];
-	y_to_x_mappings: number[];
-	alignedTimes: number[][];
-};
-
 export function buildContinuousRegions(
 	allScores: number[],
 	segments: number[][],
