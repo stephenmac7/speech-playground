@@ -2,11 +2,7 @@
 	import SampleViewer from './SampleViewer.svelte';
 	import { postBlob, postJson, getJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
-	import {
-		buildContinuousRegions,
-		buildSegmentRegions,
-		type Region
-	} from '$lib/regions';
+	import { buildContinuousRegions, buildSegmentRegions, type Region } from '$lib/regions';
 	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
 
@@ -100,11 +96,7 @@
 				id: `model-segment-${i}`,
 				start: segment[0],
 				end: segment[1],
-				content: (() => {
-					const el = document.createElement('span');
-					el.textContent = i.toString();
-					return el;
-				})(),
+				content: i.toString(),
 				color: 'rgba(0, 0, 255, 0.2)'
 			}));
 		}
@@ -372,12 +364,7 @@
 					Continuous
 				</label>
 				<label class:disabled={!supportsDiscretize}>
-					<input
-						type="radio"
-						bind:group={discretize}
-						value={true}
-						disabled={!supportsDiscretize}
-					/>
+					<input type="radio" bind:group={discretize} value={true} disabled={!supportsDiscretize} />
 					Discrete
 				</label>
 			</div>
