@@ -8,6 +8,11 @@
 		content?: string;
 	};
 
+	type CompareWith = {
+		other: { play: (start?: number, end?: number) => void };
+		alignedTimes?: number[][];
+	};
+
 	let {
 		audio,
 		regions = [],
@@ -16,6 +21,14 @@
 		layout = 'default',
 		compareWith = null,
 		currentTime = $bindable(0)
+	}: {
+		audio?: Blob;
+		regions?: Region[];
+		clickToPlay?: boolean;
+		zoom?: boolean;
+		layout?: 'default' | 'compact';
+		compareWith?: CompareWith | null;
+		currentTime?: number;
 	} = $props();
 
 	let node: HTMLElement;
@@ -92,7 +105,7 @@
 
 	function mapTime(t?: number): number | undefined {
 		if (t === undefined) return undefined;
-		if (!compareWith.alignedTimes || compareWith.alignedTimes.length === 0) return 0;
+		if (!compareWith || !compareWith.alignedTimes || compareWith.alignedTimes.length === 0) return 0;
 		const times = compareWith.alignedTimes;
 
 		// Binary search for the interval
@@ -391,6 +404,11 @@
 		contain: inline-size;
 		display: flex;
 		flex-direction: column;
+		transform: rotateX(180deg);
+	}
+
+	.scroll-wrapper {
+		transform: rotateX(180deg);
 	}
 
 	.regions-bar {

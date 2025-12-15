@@ -1,5 +1,5 @@
 <script lang="ts">
-	let { align = 'right', children } = $props();
+	let { align = 'right', position = 'top', children } = $props();
 </script>
 
 <div class="tooltip-container">
@@ -21,7 +21,12 @@
 			<line x1="12" y1="17" x2="12.01" y2="17"></line>
 		</svg>
 	</div>
-	<div class="tooltip-text" class:align-left={align === 'left'}>
+	<div
+		class="tooltip-text"
+		class:align-left={align === 'left'}
+		class:position-top={position === 'top'}
+		class:position-bottom={position === 'bottom'}
+	>
 		{@render children()}
 	</div>
 </div>
@@ -49,13 +54,20 @@
 		padding: 10px;
 		position: absolute;
 		z-index: 10;
-		bottom: 125%;
 		opacity: 0;
 		transition: opacity 0.3s;
 		border: 1px solid var(--border-color);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 		font-size: 0.9em;
 		line-height: 1.4;
+	}
+
+	.tooltip-text.position-top {
+		bottom: 125%;
+	}
+
+	.tooltip-text.position-bottom {
+		top: 125%;
 	}
 
 	.tooltip-text.align-left {
