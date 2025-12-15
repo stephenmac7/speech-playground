@@ -1,7 +1,12 @@
 // Region utilities shared by routes
-// Note: DOM operations (document.createElement) occur only when these functions are called in the browser.
 
-export type Region = { id: string; start: number; end: number; content: string; color: string };
+export type Region = {
+	id?: string;
+	start: number;
+	end: number;
+	content?: string;
+	color?: string;
+};
 
 export function buildContinuousRegions(
 	allScores: number[],
