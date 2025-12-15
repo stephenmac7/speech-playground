@@ -48,6 +48,7 @@
 
 	// ---------- Model viewer (for control from sample viewer) ----------
 	let modelViewer: SampleViewer | undefined = $state();
+	let learnerViewer: SampleViewer | undefined = $state();
 
 	// Dynamic encoder options (fetched from backend)
 	let encoderOptions = $state<EncoderOption[]>([]);
@@ -63,6 +64,10 @@
 	let scores = $state<number[]>([]);
 	let alignmentMap = $state<number[] | undefined>();
 	let alignedTimes = $state<number[][] | undefined>();
+	const modelAlignedTimes = $derived.by(() => {
+		if (!alignedTimes) return undefined;
+		return alignedTimes.map(([t1, t2]) => [t2, t1]).sort((a, b) => a[0] - b[0]);
+	});
 	let articulatoryFeatures = $state<number[][] | undefined>();
 	let learnerSegments = $state<number[][] | undefined>();
 	let modelSegments = $state<number[][] | undefined>();
@@ -287,37 +292,44 @@
 	<div class="viewer-card">
 		<div class="viewer-header">
 			<h3>Model Audio</h3>
-		</div>
-		<SampleViewer
-			audio={reconstructModel ? reconstructedAudio : modelAudio}
-			regions={modelRegions}
-			bind:this={modelViewer}
-		/>
-		<div class="viewer-header">
-			<h3>Learner Audio</h3>
-			<Tooltip>
+			<Tooltip position="bottom">
 				<b>Playback controls</b>
 				<ul class="tooltip-list">
 					<li>Drag on waveform to play a selection.</li>
-					<li>Click on a region to play it.</li>
 					<li>
-						Hold Shift while clicking a region or dragging to play the corresponding audio in the
-						model.
+						Hold Shift while dragging to play the corresponding audio in the other track.
+					</li>
+					<li>
+						Click on a region to play it. (Hold Shift to play corresponding audio in the other track.)
 					</li>
 				</ul>
 			</Tooltip>
 		</div>
 		<SampleViewer
+			audio={reconstructModel ? reconstructedAudio : modelAudio}
+			regions={modelRegions}
+			bind:this={modelViewer}
+			compareWith={learnerViewer
+				? {
+						other: learnerViewer,
+						alignedTimes: modelAlignedTimes
+					}
+				: null}
+		/>
+		<div class="viewer-header">
+			<h3>Learner Audio</h3>
+		</div>
+		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}
 			regions={userRegions}
-			compareWith={{
-				other: modelViewer,
-				learnerSegments,
-				modelSegments,
-				alignmentMap: alignmentMap,
-				alignedTimes: alignedTimes
-			}}
+			compareWith={modelViewer
+				? {
+						other: modelViewer,
+						alignedTimes: alignedTimes
+					}
+				: null}
 			bind:currentTime
+			bind:this={learnerViewer}
 			clickToPlay={!articulatoryFeatures}
 		/>
 	</div>
