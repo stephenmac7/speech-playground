@@ -115,7 +115,13 @@ def compute_continuous_grid(x, y, *, gap_penalty):
             
     return grid, sim_matrix
 
-def score_continuous_frames(learner, reference, *, gap_penalty=-0.5, normalize=False):
+def score_continuous_frames(learner, reference, *, gap_penalty=-0.5, normalize=False, alpha=None):
+    """
+    Args:
+        alpha (float, optional): If provided, applies exponential scaling 
+        to the normalized scores: exp(-alpha * (1 - score)). 
+        This sharpens the contrast for continuous similarity metrics.
+    """
     x = learner
     y = reference
 
@@ -160,13 +166,17 @@ def score_continuous_frames(learner, reference, *, gap_penalty=-0.5, normalize=F
 
     if normalize:
         # Cosine similarity is [-1, 1], Gap penalty is usually negative.
-        # We define the theoretical max as 1.0 (perfect alignment)
-        # and min as the lesser of -1.0 or the gap penalty.
         max_val = 1.0
         min_val = min(-1.0, gap_penalty)
         
         score_range = max_val - min_val
         normalized_scores = (x_penalties - min_val) / score_range
+        
+        # Apply sharpening if alpha is provided
+        if alpha is not None:
+            # We treat (1 - score) as the "distance" and apply a Gaussian-like kernel
+            normalized_scores = np.exp(-alpha * (1 - normalized_scores))
+
         return normalized_scores, alignment_path
 
     return x_penalties, alignment_path

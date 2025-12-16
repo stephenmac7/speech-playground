@@ -136,6 +136,111 @@
 		return t0[1] + ratio * (t1[1] - t0[1]);
 	}
 
+	function getEffectiveRegion(time: number): { start: number; end: number } {
+		if (!regions || regions.length === 0) {
+			return { start: 0, end: duration };
+		}
+
+		const sortedRegions = [...regions].sort((a, b) => a.start - b.start);
+
+		for (const region of sortedRegions) {
+			if (time >= region.start && time <= region.end) {
+				return { start: region.start, end: region.end };
+			}
+		}
+
+		if (time < sortedRegions[0].start) {
+			return { start: 0, end: sortedRegions[0].start };
+		}
+
+		for (let i = 0; i < sortedRegions.length - 1; i++) {
+			const current = sortedRegions[i];
+			const next = sortedRegions[i + 1];
+			if (time > current.end && time < next.start) {
+				return { start: current.end, end: next.start };
+			}
+		}
+
+		const last = sortedRegions[sortedRegions.length - 1];
+		if (time > last.end) {
+			return { start: last.end, end: duration };
+		}
+
+		return { start: 0, end: duration };
+	}
+
+	function handleRegionBarMouseDown(e: MouseEvent) {
+		if (e.button !== 0) return;
+		e.preventDefault();
+
+		if (!wavesurfer) return;
+		if (!waveformContainer) return;
+		const rect = waveformContainer.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		const time = (waveformContainer.scrollLeft + x) / pxPerSec;
+
+		const region = getEffectiveRegion(time);
+		dragStart = region.start;
+		playOther = shiftDown;
+
+		wavesurfer.pause();
+
+		window.addEventListener('mousemove', handleRegionBarMouseMove);
+		window.addEventListener('mouseup', handleRegionBarMouseUp);
+	}
+
+	function handleRegionBarMouseMove(e: MouseEvent) {
+		if (dragStart === undefined || !waveformContainer) return;
+
+		const rect = waveformContainer.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		const minGap = 30;
+
+		if (x > rect.width - minGap) {
+			waveformContainer.scrollLeft += minGap;
+		} else if (x < minGap) {
+			waveformContainer.scrollLeft -= minGap;
+		}
+	}
+
+	function handleRegionBarMouseUp(e: MouseEvent) {
+		window.removeEventListener('mousemove', handleRegionBarMouseMove);
+		window.removeEventListener('mouseup', handleRegionBarMouseUp);
+
+		if (dragStart === undefined || !waveformContainer || !wavesurfer) return;
+
+		const rect = waveformContainer.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		let dragEndTime = (waveformContainer.scrollLeft + x) / pxPerSec;
+
+		dragEndTime = Math.max(0, Math.min(dragEndTime, duration));
+
+		const region = getEffectiveRegion(dragEndTime);
+		
+		let start: number, end: number;
+
+		if (dragEndTime < dragStart) {
+			start = region.start;
+			end = region.end;
+		} else {
+			start = dragStart;
+			end = region.end;
+		}
+
+		if (playOther && compareWith && compareWith.alignedTimes) {
+			const t0 = mapTime(start);
+			const t1 = mapTime(end);
+			if (t0 !== undefined && t1 !== undefined) {
+				compareWith.other.play(t0, t1);
+			}
+		} else {
+			wavesurfer.play(start, end);
+		}
+
+		dragStart = undefined;
+		playOther = false;
+	}
+
 	onMount(() => {
 		if (!node) return;
 		wavesurfer = WaveSurfer.create({
@@ -240,6 +345,8 @@
 			if (wavesurfer) {
 				wavesurfer.destroy();
 			}
+			window.removeEventListener('mousemove', handleRegionBarMouseMove);
+			window.removeEventListener('mouseup', handleRegionBarMouseUp);
 		};
 	});
 
@@ -265,19 +372,6 @@
 			wavesurfer.setOptions({ height });
 		}
 	});
-
-	function handleRegionClick(region: Region, e: MouseEvent) {
-		e.stopPropagation();
-		if (e.shiftKey) {
-			if (compareWith && compareWith.alignedTimes) {
-				const otherStartTime = mapTime(region.start);
-				const otherEndTime = mapTime(region.end);
-				compareWith.other.play(otherStartTime, otherEndTime);
-			}
-		} else {
-			wavesurfer.play(region.start, region.end);
-		}
-	}
 
 	function format(time: number) {
 		if (isNaN(time)) return '...';
@@ -337,7 +431,12 @@
 				<div id="wavesurfer" bind:this={node}></div>
 				{#if regions.length > 0}
 					<div class="regions-bar">
-						<div class="regions-timeline" style:width="{duration * pxPerSec}px">
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class="regions-timeline"
+							style:width="{duration * pxPerSec}px"
+							onmousedown={handleRegionBarMouseDown}
+						>
 							{#if duration}
 								{#each regions as region}
 									<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -347,7 +446,6 @@
 										style:left="{region.start * pxPerSec}px"
 										style:width="{(region.end - region.start) * pxPerSec}px"
 										style:background-color={region.color ?? 'rgba(255, 255, 197, 0.5)'}
-										onclick={(e) => handleRegionClick(region, e)}
 									>
 										{#if region.content}
 											<div class="region-content-under">{region.content}</div>
@@ -468,7 +566,6 @@
 		border-right: 1px solid #e5e7eb;
 		box-sizing: border-box;
 		overflow: hidden;
-		cursor: pointer;
 	}
 
 	.region-content-under {
