@@ -212,7 +212,7 @@ def plot_waveform(waveform, sample_rate, *, agreement_scores, frame_duration=0.0
     plt.tight_layout()
 
 
-def build_alignments(path, learner_len, reference_len, *, fill_backwards=True):
+def build_alignments(path, learner_len, reference_len, *, fill_backwards=False):
     """
     Generates a complete map from learner frames to reference frames.
 
