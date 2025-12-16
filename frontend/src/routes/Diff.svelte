@@ -97,12 +97,13 @@
 		}
 
 		if (modelSegments) {
+			const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
 			return modelSegments.map((segment, i) => ({
 				id: `model-segment-${i}`,
 				start: segment[0],
 				end: segment[1],
 				content: i.toString(),
-				color: 'rgba(0, 0, 255, 0.2)'
+				color: coveredIndices.has(i) ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
 			}));
 		}
 		return [] as Region[];
@@ -121,12 +122,21 @@
 						opacity = 0.8 * ((trigger - score) / trigger);
 					}
 					const modelIndex = alignmentMap![i];
+					if (modelIndex === -1) {
+						return {
+							id: 'segment-' + i,
+							start: segment[0],
+							end: segment[1],
+							color: `rgba(255, 255, 0, 0.5)`,
+							content: ''
+						};
+					}
 					return {
 						id: 'segment-' + i,
 						start: segment[0],
 						end: segment[1],
 						color: `rgba(255, 0, 0, ${opacity})`,
-						content: modelIndex === -1 ? '' : modelIndex.toString()
+						content: modelIndex.toString()
 					};
 				});
 			} else {
