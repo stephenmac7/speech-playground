@@ -59,9 +59,14 @@ class ModelMetadata(ABC):
         return model.frame_shift
 
     @property
-    def score_alpha(self):
+    def euclidean_alpha(self):
         """Alpha parameter for converting distances to scores."""
         return -0.00173
+
+    @property
+    def cosine_alpha(self):
+        """Alpha parameter for sharpening cosine distance."""
+        return 2.0
 
     @property
     def default_dist_method(self):
@@ -135,7 +140,7 @@ class HubertMetadata(ModelMetadata):
         return KMeansTokenizer(self.load_kmeans(discretizer_name)).tokenize_one(features)
 
     @property
-    def score_alpha(self):
+    def euclidean_alpha(self):
         return -0.02
 
 
@@ -235,7 +240,7 @@ class InversionMetadata(ModelMetadata):
         }
 
     @property
-    def score_alpha(self):
+    def euclidean_alpha(self):
         """Alpha parameter for converting distances to scores."""
         return -0.7
     
@@ -352,6 +357,11 @@ class SyllableLMMetadata(ModelMetadata):
 
     def get_segments(self, encoded):
         return encoded["segments"].tolist()
+
+    @property
+    def cosine_alpha(self):
+        """Alpha parameter for sharpening cosine distance."""
+        return 9.0
 
 
 SYLBER_MODELS = [SylberV1Metadata()]

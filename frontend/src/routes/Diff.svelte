@@ -2,7 +2,12 @@
 	import SampleViewer from './SampleViewer.svelte';
 	import { postBlob, postJson, getJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
-	import { buildContinuousRegions, buildSegmentRegions, type Region } from '$lib/regions';
+	import {
+		buildContinuousRegions,
+		buildSegmentRegions,
+		buildCombinedModelRegions,
+		type Region
+	} from '$lib/regions';
 	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
 
@@ -14,6 +19,7 @@
 		discretizers: Array<string>;
 		default_dist_method: string;
 		has_fixed_frame_rate: boolean;
+		supports_dpdp: boolean;
 	};
 	type VoiceModelOption = { value: string; label: string };
 
@@ -87,33 +93,56 @@
 		if (!encoderOptions.length || !selectedEncoderOption) return true;
 		return selectedEncoderOption.discretizers.length > 0;
 	});
+	const supportsDpdp = $derived.by(() => {
+		// Until list loads, default to true
+		if (!encoderOptions.length || !selectedEncoderOption) return true;
+		return selectedEncoderOption.supports_dpdp;
+	});
+	const isFixedRateEncoder = $derived(selectedEncoderOption?.has_fixed_frame_rate ?? true);
 
 	// ---------- Derived regions ----------
-	const modelRegions = $derived.by(() => {
-		const isFixedRate = selectedEncoderOption?.has_fixed_frame_rate ?? true;
-
-		if (isFixedRate) {
-			return [] as Region[];
-		}
+	const combinedModelData = $derived.by(() => {
+		const hasVariableSegments = !isFixedRateEncoder || (discretize && dpdp);
 
 		if (modelSegments) {
 			const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
-			return modelSegments.map((segment, i) => ({
-				id: `model-segment-${i}`,
-				start: segment[0],
-				end: segment[1],
-				content: i.toString(),
-				color: coveredIndices.has(i) ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
-			}));
+
+			if (isFixedRateEncoder && discretize && !dpdp) {
+				return buildCombinedModelRegions(modelSegments, coveredIndices);
+			}
+
+			if (hasVariableSegments) {
+				return {
+					regions: modelSegments.map((segment, i) => ({
+						id: `model-segment-${i}`,
+						start: segment[0],
+						end: segment[1],
+						content: i.toString(),
+						color: coveredIndices.has(i) ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
+					})),
+					indexMap: undefined
+				};
+			}
 		}
-		return [] as Region[];
+		return { regions: [] as Region[], indexMap: undefined };
 	});
 
-	const userRegions = $derived.by(() => {
-		const isFixedRate = selectedEncoderOption?.has_fixed_frame_rate ?? true;
+	const modelRegions = $derived(combinedModelData.regions);
+	const modelIndexMap = $derived(combinedModelData.indexMap);
 
+	const userRegions = $derived.by(() => {
 		if (learnerSegments) {
-			if (alignmentMap && !isFixedRate) {
+			if (discretize) {
+				return buildSegmentRegions(
+					scores,
+					learnerSegments,
+					combineRegions,
+					alignmentMap,
+					modelIndexMap
+				);
+			}
+
+			if (alignmentMap && !isFixedRateEncoder) {
 				// Variable rate / segments mode (e.g. Sylber)
 				return learnerSegments.map((segment, i) => {
 					const score = scores[i];
@@ -140,11 +169,7 @@
 					};
 				});
 			} else {
-				if (discretize) {
-					return buildSegmentRegions(scores, learnerSegments, combineRegions);
-				} else {
-					return buildContinuousRegions(scores, learnerSegments, trigger, trigger - 0.05);
-				}
+				return buildContinuousRegions(scores, learnerSegments, trigger, trigger - 0.05);
 			}
 		}
 		return [] as Region[];
@@ -162,6 +187,12 @@
 
 		if (!selectedEncoderOption.discretizers.includes(discretizer)) {
 			discretizer = selectedEncoderOption.discretizers[0];
+		}
+		if (!supportsDiscretize) {
+			discretize = false;
+		}
+		if (!supportsDpdp) {
+			dpdp = false;
 		}
 	});
 
@@ -350,10 +381,10 @@
 			/>
 		</div>
 	{/if}
-	<!-- <details>
+	<details>
 		<summary>Details</summary>
 		<p>{JSON.stringify(scores)}</p>
-	</details> -->
+	</details>
 
 	<div class="controls">
 		<fieldset>
@@ -364,6 +395,7 @@
 					bind:value={encoder}
 					onchange={() => {
 						if (!supportsDiscretize) discretize = false;
+						if (!supportsDpdp) dpdp = false;
 					}}
 				>
 					{#if encoderOptions.length}
@@ -405,7 +437,7 @@
 						Combine Regions:
 						<input type="checkbox" bind:checked={combineRegions} />
 					</label>
-					<label class="label-with-tooltip">
+					<label class="label-with-tooltip" class:disabled={!supportsDpdp}>
 						<span>DPDP:</span>
 						<Tooltip align="left">
 							Dynamic programming method that produces coarser speech units.
@@ -423,7 +455,7 @@
 								doi:10.1109/TASLP.2022.3229264
 							</a>
 						</Tooltip>
-						<input type="checkbox" bind:checked={dpdp} />
+						<input type="checkbox" bind:checked={dpdp} disabled={!supportsDpdp} />
 					</label>
 					<label class:disabled={!dpdp}>
 						Gamma: {gamma}

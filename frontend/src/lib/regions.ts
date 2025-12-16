@@ -76,7 +76,9 @@ export function buildContinuousRegions(
 
 export function buildCombinedSegmentRegions(
 	scores: number[], // size N
-	segments: number[][] // size N
+	segments: number[][], // size N
+	alignmentMap?: number[],
+	modelIndexMap?: number[]
 ): Region[] {
 	const regions: Region[] = [];
 	let currentRegion: { startFrame: number; scores: number[] } | undefined;
@@ -84,36 +86,94 @@ export function buildCombinedSegmentRegions(
 
 	const createRegion = (region: { startFrame: number; endFrame: number; scores: number[] }) => {
 		const avg = region.scores.reduce((a, b) => a + b, 0) / region.scores.length;
-		const opacity = 0.8 * (1 - avg);
+
+		let isPureInsertion = true;
+		const validIndices: number[] = [];
+
+		if (alignmentMap) {
+			for (let k = region.startFrame; k < region.endFrame; k++) {
+				const idx = alignmentMap[k];
+				if (idx !== -1) {
+					isPureInsertion = false;
+					validIndices.push(idx);
+				}
+			}
+		} else {
+			isPureInsertion = false;
+		}
+
+		let color: string;
+		if (isPureInsertion) {
+			color = `rgba(255, 255, 0, 0.5)`;
+		} else {
+			const opacity = 0.8 * (1 - avg);
+			color = `rgba(255, 0, 0, ${opacity})`;
+		}
+
+		let content = '';
+		if (!isPureInsertion && validIndices.length > 0) {
+			let mappedIndices = validIndices;
+			if (modelIndexMap) {
+				mappedIndices = validIndices.map((idx) => modelIndexMap[idx]);
+			}
+
+			let min = mappedIndices[0];
+			let max = mappedIndices[0];
+			for (const idx of mappedIndices) {
+				if (idx < min) min = idx;
+				if (idx > max) max = idx;
+			}
+
+			if (min === max) {
+				content = String(min);
+			} else {
+				content = `${min}-${max}`;
+			}
+		}
+
 		regions.push({
 			id: `region-${region.startFrame}-${region.endFrame}`,
 			start: segments[region.startFrame][0],
 			end: segments[region.endFrame - 1][1],
-			color: `rgba(255, 0, 0, ${opacity})`,
-			content: String(avg.toFixed(2))
+			color,
+			content
 		});
 	};
 
 	scores.forEach((score, i) => {
-		if (score < 0.5) {
+		let isBad = false;
+		if (alignmentMap && alignmentMap[i] === -1) {
+			isBad = true;
+		} else if (score < 0.5) {
+			isBad = true;
+		}
+
+		if (isBad) {
 			if (!currentRegion) {
-				currentRegion = { startFrame: i, scores: [] };
+				currentRegion = { startFrame: i, scores: [score] };
+				seenGoodFrames = 0;
+			} else {
+				currentRegion.scores.push(score);
+				seenGoodFrames = 0;
 			}
-			currentRegion.scores.push(score);
-			seenGoodFrames = 0;
-		} else if (currentRegion && seenGoodFrames < 2) {
-			// Allow some patience to continue the region
-			currentRegion.scores.push(score);
-			seenGoodFrames++;
-		} else if (currentRegion) {
-			// End the current region
-			const lastBadFrame = i - seenGoodFrames;
-			createRegion({
-				startFrame: currentRegion.startFrame,
-				endFrame: lastBadFrame,
-				scores: currentRegion.scores.slice(0, lastBadFrame - (i - currentRegion.scores.length))
-			});
-			currentRegion = undefined;
+		} else {
+			// OK frame
+			if (currentRegion && seenGoodFrames < 2) {
+				currentRegion.scores.push(score);
+				seenGoodFrames++;
+			} else if (currentRegion) {
+				// End region
+				const lastBadFrame = i - seenGoodFrames;
+				createRegion({
+					startFrame: currentRegion.startFrame,
+					endFrame: lastBadFrame,
+					scores: currentRegion.scores.slice(
+						0,
+						lastBadFrame - (i - currentRegion.scores.length)
+					)
+				});
+				currentRegion = undefined;
+			}
 		}
 	});
 
@@ -136,25 +196,103 @@ export function buildCombinedSegmentRegions(
 export function buildSegmentRegions(
 	scores: number[], // size N
 	segments: number[][], // size N
-	combineRegions: boolean = false
+	combineRegions: boolean = false,
+	alignmentMap?: number[],
+	modelIndexMap?: number[]
 ): Region[] {
 	if (combineRegions) {
-		return buildCombinedSegmentRegions(scores, segments);
+		return buildCombinedSegmentRegions(scores, segments, alignmentMap, modelIndexMap);
 	}
 	const regions: Region[] = [];
 	scores.forEach((score, i) => {
-		if (score < 0.5) {
+		const isInsertion = alignmentMap && alignmentMap[i] === -1;
+		if (score < 0.5 || isInsertion) {
 			const opacity = 0.8 * (1 - score);
 			const startFrame = i;
 			const endFrame = i + 1;
+
+			let content = '';
+			if (!isInsertion && alignmentMap) {
+				const originalIndex = alignmentMap[i];
+				if (modelIndexMap && originalIndex !== -1) {
+					content = String(modelIndexMap[originalIndex]);
+				} else {
+					content = String(originalIndex);
+				}
+			}
+
 			regions.push({
 				id: `region-${startFrame}-${endFrame}`,
 				start: segments[startFrame][0],
 				end: segments[endFrame - 1][1],
-				color: `rgba(255, 0, 0, ${opacity})`,
-				content: ''
+				color: isInsertion ? `rgba(255, 255, 0, 0.5)` : `rgba(255, 0, 0, ${opacity})`,
+				content
 			});
 		}
 	});
 	return regions;
+}
+
+export function buildCombinedModelRegions(
+	segments: number[][],
+	coveredIndices: Set<number>
+): { regions: Region[]; indexMap: number[] } {
+	const regions: Region[] = [];
+	const indexMap: number[] = new Array(segments.length).fill(-1);
+	let currentStart = -1;
+	let currentEnd = -1;
+	let currentIsCovered = false;
+	let regionIndex = 0;
+
+	for (let i = 0; i < segments.length; i++) {
+		const isCovered = coveredIndices.has(i);
+
+		if (currentStart === -1) {
+			// Start new region
+			currentStart = i;
+			currentEnd = i;
+			currentIsCovered = isCovered;
+		} else {
+			if (isCovered === currentIsCovered) {
+				// Continue region
+				currentEnd = i;
+			} else {
+				// End previous region
+				regions.push({
+					id: `model-combined-${regionIndex}`,
+					start: segments[currentStart][0],
+					end: segments[currentEnd][1],
+					content: regionIndex.toString(),
+					color: currentIsCovered ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
+				});
+				// Fill index map
+				for (let j = currentStart; j <= currentEnd; j++) {
+					indexMap[j] = regionIndex;
+				}
+				regionIndex++;
+
+				// Start new region
+				currentStart = i;
+				currentEnd = i;
+				currentIsCovered = isCovered;
+			}
+		}
+	}
+
+	// Push last region
+	if (currentStart !== -1) {
+		regions.push({
+			id: `model-combined-${regionIndex}`,
+			start: segments[currentStart][0],
+			end: segments[currentEnd][1],
+			content: regionIndex.toString(),
+			color: currentIsCovered ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
+		});
+		// Fill index map
+		for (let j = currentStart; j <= currentEnd; j++) {
+			indexMap[j] = regionIndex;
+		}
+	}
+
+	return { regions, indexMap };
 }

@@ -92,6 +92,7 @@ def get_encoders():
             "discretizers": model.discretizers(),
             "default_dist_method": model.default_dist_method,
             "has_fixed_frame_rate": model.has_fixed_frame_rate,
+            "supports_dpdp": hasattr(model, "cluster_centers"),
         }
         for model in MODELS
     }
@@ -246,7 +247,7 @@ def compare_endpoint(
         dist_method = dist_method or model.default_dist_method
 
         if not model.has_fixed_frame_rate:
-            scores, path = score_continuous_frames(y_feats, x_feats, normalize=True)
+            scores, path = score_continuous_frames(y_feats, x_feats, normalize=True, alpha=model.cosine_alpha)
             alignment_map = build_alignments(path, len(y_feats), len(x_feats))
 
             aligned_times = []
@@ -273,9 +274,9 @@ def compare_endpoint(
             )
 
             if dist_method == "euclidean":
-                scores = np.exp(model.score_alpha * (y_positions**2))
+                scores = np.exp(model.euclidean_alpha * (y_positions**2))
             else:
-                scores = y_positions
+                scores = np.exp(-model.cosine_alpha * y_positions)
 
             aligned_times = []
             for i, j in zip(alignment.index1, alignment.index2):
@@ -325,10 +326,7 @@ def compare_dpdp_endpoint(
     ycodes, yboundaries = tokenizer.tokenize_one(y, gamma=gamma)
 
     y_mismatches, path = score_frames(ycodes, xcodes, normalize=True)
-    alignment_map_codes = build_alignments(path, len(ycodes), len(xcodes))
-    alignment_map = np.zeros(len(y), dtype=int)
-    for j in range(len(ycodes)):
-        alignment_map[j] = alignment_map_codes[j]
+    alignment_map = build_alignments(path, len(ycodes), len(xcodes))
 
     aligned_times = []
     last_match = None
