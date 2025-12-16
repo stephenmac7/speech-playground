@@ -161,6 +161,10 @@ class KanadeMetadata(ModelMetadata):
     def name(self) -> str:
         return self._name
 
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return True
+
     def load(self):
         return get_kanade(self.variant)
 
@@ -297,6 +301,59 @@ class SylberV2Metadata(SylberMetadata):
         return self.load().encode_one(waveform)
 
 
+class SyllableLMMetadata(ModelMetadata):
+    def __init__(
+        self,
+        *,
+        checkpoint_path: str | os.PathLike,
+        kmeans_centroids_path: str | os.PathLike,
+        agglom_indices_path: str | os.PathLike,
+        model_key: str,
+    ):
+        self.checkpoint_path = checkpoint_path
+        self.kmeans_centroids_path = kmeans_centroids_path
+        self.agglom_indices_path = agglom_indices_path
+        self.model_key = model_key
+
+    @property
+    def slug(self) -> str:
+        return f"syllablelm-{self.model_key}"
+
+    @property
+    def name(self) -> str:
+        return f"SyllableLM {self.model_key}"
+
+    @lru_cache()
+    def load(self):
+        from speech_playground.encoder.syllablelm import SyllableLMEncoder
+
+        return SyllableLMEncoder(
+            checkpoint_path=self.checkpoint_path,
+            kmeans_centroids_path=self.kmeans_centroids_path,
+            agglom_indices_path=self.agglom_indices_path,
+            model_key=self.model_key,
+        )
+
+    def encode(self, waveform: torch.Tensor):
+        return self.load().encode_one(waveform)
+
+    def discretizers(self):
+        return ["DEFAULT"]
+
+    def to_continuous_features(self, encoded):
+        return encoded["features"].cpu().numpy()
+
+    def discretize(self, features, discretizer_name: str):
+        return features["tokens"]
+
+    @property
+    def frame_duration(self) -> Optional[float]:
+        return None
+
+    def get_segments(self, encoded):
+        return encoded["segments"].tolist()
+
+
 SYLBER_MODELS = [SylberV1Metadata()]
 sylber2_checkpoint_path = os.getenv("SYLBER2_CHECKPOINT_PATH")
 if sylber2_checkpoint_path is not None:
@@ -311,6 +368,30 @@ if INVERSION_TOP is not None:
     MODELS.append(InversionMetadata())
 else:
     print("WARNING: Articulatory Inversion model files not found; skipping inversion encoder.")
+
+syllablelm_checkpoints_path = os.getenv("SYLLABLELM_CHECKPOINTS_PATH")
+if syllablelm_checkpoints_path is not None:
+    root = Path(syllablelm_checkpoints_path)
+    for checkpoint_path in sorted(list(root.glob("SylBoost_*.pth"))):
+        print('checking checkpoint_path:', checkpoint_path)
+        name_parts = checkpoint_path.stem.split("_")
+        model_key = name_parts[-1][0] + "." + name_parts[-1][1:]
+        kmeans_path = root / f"{checkpoint_path.stem}_kmeans.npy"
+        agglom_path = root / f"{checkpoint_path.stem}_agglom.npy"
+        if not kmeans_path.exists() or not agglom_path.exists():
+            print(f"WARNING: Missing kmeans or agglom file for {checkpoint_path.name}; skipping.")
+            continue
+        MODELS.append(
+            SyllableLMMetadata(
+                checkpoint_path=checkpoint_path,
+                kmeans_centroids_path=kmeans_path,
+                agglom_indices_path=agglom_path,
+                model_key=model_key,
+            )
+        )
+    print(MODELS)
+else:
+    print("WARNING: SYLLABLE_LM_CHECKPOINTS_PATH not set; skipping SyllableLM encoder.")
 
 try:
     from models_local import EXTRA_MODELS
