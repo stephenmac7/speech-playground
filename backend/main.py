@@ -291,11 +291,6 @@ def compare_endpoint(
                 aligned_times.append([y_segments[j][0], x_segments[i][0]])
                 aligned_times.append([y_segments[j][1], x_segments[i][1]])
 
-            if len(alignment.index1) > 0:
-                last_x = alignment.index1[-1]
-                last_y = alignment.index2[-1]
-                aligned_times.append([y_segments[last_y][1], x_segments[last_x][1]])
-
     return {
         "scores": scores.tolist(),
         "alignmentMap": alignment_map.tolist(),
@@ -337,21 +332,6 @@ def compare_dpdp_endpoint(
     y_mismatches, path = score_alignment(ycodes, xcodes)
     alignment_map = build_alignments(path, len(ycodes), len(xcodes))
 
-    aligned_times = []
-    last_match = None
-    for y_idx, x_idx in path:
-        if y_idx is not None and x_idx is not None:
-            y_start = yboundaries[y_idx] * model.frame_duration
-            x_start = xboundaries[x_idx] * model.frame_duration
-            aligned_times.append([y_start, x_start])
-            last_match = (y_idx, x_idx)
-
-    if last_match:
-        y_idx, x_idx = last_match
-        y_end = yboundaries[y_idx + 1] * model.frame_duration
-        x_end = xboundaries[x_idx + 1] * model.frame_duration
-        aligned_times.append([y_end, x_end])
-
     # Convert boundaries to seconds
     y_segments = [
         [yboundaries[i] * model.frame_duration, yboundaries[i + 1] * model.frame_duration]
@@ -361,6 +341,12 @@ def compare_dpdp_endpoint(
         [xboundaries[i] * model.frame_duration, xboundaries[i + 1] * model.frame_duration]
         for i in range(len(xboundaries) - 1)
     ]
+
+    aligned_times = []
+    for y_idx, x_idx in path:
+        if y_idx is not None and x_idx is not None:
+            aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
+            aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
 
     return {
         "scores": y_mismatches.tolist(),
