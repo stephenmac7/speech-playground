@@ -398,12 +398,12 @@
 			/>
 		</div>
 	{/if}
-	<details>
+	<!-- <details>
 		<summary>Details</summary>
 		<p>
 			{scores.map((s) => s.toFixed(2)).join(', ')}
 		</p>
-	</details>
+	</details> -->
 
 	<div class="controls">
 		<fieldset>

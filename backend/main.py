@@ -173,7 +173,7 @@ def data_endpoint(filename: str):
     return streaming_response_of_audio_file(path, apply_vad=False)
 
 
-def get_comparison_audio(
+def encoded_audio_for_comparison(
     encoder: str = Form(...),
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
@@ -186,7 +186,11 @@ def get_comparison_audio(
     xwav = model.resample(xwav.squeeze(0), xsr)
     ywav, ysr = torchaudio.load_with_torchcodec(file.file)
     ywav = model.resample(ywav.squeeze(0), ysr)
-    return model, xwav, ywav
+
+    x = model.encode(xwav)
+    y = model.encode(ywav)
+
+    return model, x, y
 
 
 @app.post("/ifmdd")
@@ -212,19 +216,13 @@ def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
 
 @app.post("/compare")
 def compare_endpoint(
-    audio_data: tuple = Depends(get_comparison_audio),
+    audio_data: tuple = Depends(encoded_audio_for_comparison),
     discretizer: Optional[str] = Form(None),
     dist_method: Optional[str] = Form(None),
     alignment_method: Optional[str] = Form(None),
     alpha: Optional[float] = Form(None),
 ):
-    model, xwav, ywav = audio_data
-
-    start_time = time.time()
-    x = model.encode(xwav)
-    y = model.encode(ywav)
-    end_time = time.time()
-    print(f"Encoding time for model '{model.slug}': {end_time - start_time:.2f} seconds")
+    model, x, y = audio_data
 
     x_segments = model.get_segments(x)
     y_segments = model.get_segments(y)
@@ -310,16 +308,16 @@ def compare_endpoint(
 
 @app.post("/compare_dpdp")
 def compare_dpdp_endpoint(
-    audio_data: tuple = Depends(get_comparison_audio),
+    audio_data: tuple = Depends(encoded_audio_for_comparison),
     gamma: float = Form(...),
     discretizer: str = Form(...),
 ):
     from speech_playground.tokenizer.dpdp import DPDPTokenizer
 
-    model, xwav, ywav = audio_data
+    model, x, y = audio_data
 
-    x = model.to_continuous_features(model.encode(xwav))
-    y = model.to_continuous_features(model.encode(ywav))
+    x = model.to_continuous_features(x)
+    y = model.to_continuous_features(y)
 
     cluster_centers = model.cluster_centers(discretizer)
     tokenizer = DPDPTokenizer(cluster_centers=cluster_centers)
