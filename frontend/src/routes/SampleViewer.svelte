@@ -105,35 +105,56 @@
 		waveformContainer.scrollLeft = pointerTime * pxPerSec - x;
 	}
 
-	function mapTime(t?: number): number | undefined {
+	function mapTime(t?: number, strategy: 'min' | 'max' = 'min'): number | undefined {
 		if (t === undefined) return undefined;
 		if (!compareWith || !compareWith.alignedTimes || compareWith.alignedTimes.length === 0) return 0;
 		const times = compareWith.alignedTimes;
 
-		// Binary search for the interval
 		let low = 0;
 		let high = times.length - 1;
 
-		if (t <= times[0][0]) return times[0][1];
-		if (t >= times[high][0]) return times[high][1];
-
-		while (low <= high) {
-			const mid = Math.floor((low + high) / 2);
-			if (times[mid][0] < t) {
-				low = mid + 1;
-			} else {
-				high = mid - 1;
+		if (strategy === 'min') {
+			while (low <= high) {
+				const mid = Math.floor((low + high) / 2);
+				if (times[mid][0] < t) {
+					low = mid + 1;
+				} else {
+					high = mid - 1;
+				}
 			}
+			if (low === 0) return times[0][1];
+			if (low >= times.length) return times[times.length - 1][1];
+
+			const idx = low;
+			const t0 = times[idx - 1];
+			const t1 = times[idx];
+
+			if (t1[0] === t0[0]) return t0[1];
+
+			const ratio = (t - t0[0]) / (t1[0] - t0[0]);
+			return t0[1] + ratio * (t1[1] - t0[1]);
+		} else {
+			while (low <= high) {
+				const mid = Math.floor((low + high) / 2);
+				if (times[mid][0] <= t) {
+					low = mid + 1;
+				} else {
+					high = mid - 1;
+				}
+			}
+			const idx = low - 1;
+
+			if (idx < 0) return times[0][1];
+			if (idx >= times.length - 1) return times[times.length - 1][1];
+
+			const t0 = times[idx];
+			const t1 = times[idx + 1];
+
+			if (t1[0] === t0[0]) return t1[1];
+
+			const ratio = (t - t0[0]) / (t1[0] - t0[0]);
+			return t0[1] + ratio * (t1[1] - t0[1]);
 		}
-
-		// low is now the index of the first element > t
-		// so the interval is [low-1, low]
-		const idx = low;
-		const t0 = times[idx - 1];
-		const t1 = times[idx];
-
-		const ratio = (t - t0[0]) / (t1[0] - t0[0]);
-		return t0[1] + ratio * (t1[1] - t0[1]);
 	}
 
 	function getEffectiveRegion(time: number): { start: number; end: number } {
@@ -228,8 +249,8 @@
 		}
 
 		if (playOther && compareWith && compareWith.alignedTimes) {
-			const t0 = mapTime(start);
-			const t1 = mapTime(end);
+			const t0 = mapTime(start, 'max');
+			const t1 = mapTime(end, 'max');
 			if (t0 !== undefined && t1 !== undefined) {
 				compareWith.other.play(t0, t1);
 			}
@@ -324,8 +345,8 @@
 			}
 			if (playOther) {
 				if (compareWith && compareWith.alignedTimes) {
-					const otherStartTime = mapTime(dragStart);
-					const otherEndTime = mapTime(dragEnd);
+					const otherStartTime = mapTime(dragStart, 'max');
+					const otherEndTime = mapTime(dragEnd, 'max');
 					compareWith.other.play(otherStartTime, otherEndTime);
 				} else {
 					console.warn('No compareWith data to play other audio.');

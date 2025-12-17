@@ -1,185 +1,170 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def compute_match_grid(x, y, *, gap_penalty, match_score, mismatch_score):
-    grid = np.zeros((len(x)+1, len(y)+1))
-    # no penalty for starting in the middle of y
-    grid[1:, 0] = np.arange(1, len(x)+1) * gap_penalty
-    for i in range(1, len(x)+1):
-        for j in range(1, len(y)+1):
-            if x[i-1] == y[j-1]:
-                score = match_score
+def compute_similarity_matrix(x, y, *, dist_method, match_score, mismatch_score, alpha=None):
+    """
+    Computes a similarity matrix (N x M) normalized to range [-1, 1].
+    Uses an RBF kernel for Euclidean distances to bound the scores.
+    """
+    # Case 1: Discrete Matching (e.g., integers, strings)
+    if dist_method is None:
+        matches = x[:, None] == y[None, :]
+        return np.where(matches, match_score, mismatch_score)
+
+    # Case 2: Continuous Cosine Similarity
+    elif dist_method == "cosine":
+        # Normalize vectors to unit length
+        x_norm = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-9)
+        y_norm = y / (np.linalg.norm(y, axis=1, keepdims=True) + 1e-9)
+        
+        # Dot product: Range [-1.0, 1.0]
+        sim = np.dot(x_norm, y_norm.T)
+        
+        # Optional: Sharpen cosine similarities with alpha if provided
+        if alpha is not None:
+            sign = np.sign(sim)
+            sim = sign * (np.abs(sim) ** alpha)
+        
+        return sim
+
+    # Case 3: Continuous Euclidean Distance (Bounded with RBF)
+    elif dist_method == "euclidean":
+        # ||x - y||^2 = ||x||^2 + ||y||^2 - 2 <x, y>
+        x_sq = np.sum(x**2, axis=1, keepdims=True)
+        y_sq = np.sum(y**2, axis=1, keepdims=True)
+        dists_sq = x_sq + y_sq.T - 2 * np.dot(x, y.T)
+        dists_sq = np.maximum(dists_sq, 0) # Clip small numerical errors
+
+        # Auto-tune alpha if not provided
+        # We want the median distance to map to a score of ~0.0 (neutral)
+        if alpha is None:
+            sample = dists_sq.flatten()
+            if len(sample) > 1000:
+                sample = np.random.choice(sample, 1000, replace=False)
+            median_sq = np.median(sample)
+            # score = 2 * exp(-alpha * d^2) - 1
+            # 0 = 2 * exp(-alpha * med) - 1  =>  0.5 = exp(...)  =>  ln(0.5) = -alpha * med
+            # alpha = ln(2) / median
+            if median_sq > 1e-6:
+                alpha = np.log(2) / median_sq
             else:
-                score = mismatch_score
+                alpha = 1.0
+            print("using alpha =", alpha)
+
+        # RBF Kernel Shifted: Maps [0, inf) -> [1, -1]
+        # Distance 0 -> Score 1.0 (Match)
+        # Large Distance -> Score -1.0 (Mismatch)
+        similarities = 2 * np.exp(-alpha * dists_sq) - 1
+        
+        return similarities * match_score
+
+    else:
+        raise ValueError(f"Unknown dist_method: {dist_method}")
+
+
+def compute_alignment_grid(sim_matrix, gap_penalty):
+    """
+    Fills the DP grid using Global Alignment (Needleman-Wunsch) logic.
+    """
+    len_x, len_y = sim_matrix.shape
+    grid = np.zeros((len_x + 1, len_y + 1))
+
+    # Initialize first row and column with cumulative gap penalties
+    grid[:, 0] = np.arange(len_x + 1) * gap_penalty
+    grid[0, :] = np.arange(len_y + 1) * gap_penalty
+
+    # Fill DP Grid
+    for i in range(1, len_x + 1):
+        for j in range(1, len_y + 1):
+            score = sim_matrix[i - 1, j - 1]
+            
+            # Standard Needleman-Wunsch recurrence
             grid[i, j] = max(
-                grid[i-1, j] + gap_penalty,
-                grid[i, j-1] + gap_penalty,
-                grid[i-1, j-1] + score
+                grid[i - 1, j] + gap_penalty,   # Vertical (Gap in Y / Insertion in X)
+                grid[i, j - 1] + gap_penalty,   # Horizontal (Gap in X / Deletion from Y)
+                grid[i - 1, j - 1] + score,     # Diagonal (Match/Mismatch)
             )
+
     return grid
 
-def score_frames(learner, reference, *, gap_penalty=-1, match_score=1, mismatch_score=-1, normalize=False):
-    x = learner
-    y = reference
 
-    # Step 1: Compute the alignment score grid
-    grid = compute_match_grid(
-        x, y,
-        gap_penalty=gap_penalty,
-        match_score=match_score,
-        mismatch_score=mismatch_score
+def score_alignment(
+    learner,
+    reference,
+    *,
+    gap_penalty=-0.5, # Adjusted default: since scores are [-1, 1], -0.5 is a "soft" penalty
+    dist_method=None,
+    match_score=1.0,
+    mismatch_score=-1.0,
+    alpha=None,
+    tmpdir=None,
+):
+    x, y = learner, reference
+
+    # 1. Compute Similarity Matrix (Bounded [-1, 1])
+    sim_matrix = compute_similarity_matrix(
+        x, y, dist_method=dist_method, match_score=match_score, mismatch_score=mismatch_score, alpha=alpha
     )
+    if tmpdir:
+        plt.plot()
+        plt.imshow(sim_matrix.T, origin='lower', aspect='auto', cmap='bwr', vmin=-1, vmax=1)
+        plt.title('Similarity Matrix')
+        plt.xlabel('Learner Frames')
+        plt.ylabel('Reference Frames')
+        plt.savefig(f"{tmpdir}/similarity_matrix.png")
+        plt.close()
 
-    # Step 2: Backtrack, calculate primary penalties, and record omissions
+    # 2. Compute DP Grid
+    grid = compute_alignment_grid(sim_matrix, gap_penalty)
+
+    # 3. Backtrack with explicit tie-breaking
     x_penalties = np.zeros(len(x))
     alignment_path = []
 
-    i = len(x)
-    j = np.argmax(grid[i, :])  # Start at the max in the last row
+    i, j = len(x), len(y)
 
-    while i > 0 and j > 0:
-        current_match_score = match_score if x[i - 1] == y[j - 1] else mismatch_score
-
-        if np.isclose(grid[i, j], grid[i - 1, j - 1] + current_match_score):
-            x_penalties[i - 1] = current_match_score
+    while i > 0 or j > 0:
+        current_score = grid[i, j]
+        
+        # Retrieve predecessor scores (safe against boundary checks)
+        score_diag = grid[i - 1, j - 1] + sim_matrix[i - 1, j - 1] if (i > 0 and j > 0) else -float('inf')
+        score_up   = grid[i - 1, j] + gap_penalty if (i > 0) else -float('inf')
+        
+        # Prioritize: Diagonal (Match) > Vertical (Insertion) > Horizontal (Deletion)
+        # Using np.isclose handles floating point equality issues
+        if i > 0 and j > 0 and np.isclose(current_score, score_diag):
+            # Diagonal: Match or Substitution
+            x_penalties[i - 1] = sim_matrix[i - 1, j - 1]
             alignment_path.append((i - 1, j - 1))
             i -= 1
             j -= 1
-        elif np.isclose(grid[i, j], grid[i - 1, j] + gap_penalty): # Gap in reference
+        elif i > 0 and np.isclose(current_score, score_up):
+            # Vertical: Gap in Reference (Y)
+            # This means Learner (X) has extra audio -> INSERTION
             x_penalties[i - 1] = gap_penalty
             alignment_path.append((i - 1, None))
             i -= 1
-        else: # Gap in learner
+        else:
+            # Horizontal: Gap in Learner (X)
+            # This means Reference (Y) has audio that Learner missed -> DELETION
+            # We cannot mark x_penalties because 'i' does not decrement.
             alignment_path.append((None, j - 1))
             j -= 1
 
-    while i > 0:
-        x_penalties[i - 1] = gap_penalty
-        alignment_path.append((i - 1, None))
-        i -= 1
-
     alignment_path.reverse()
 
-    if normalize:
-        max_val = match_score
-        min_val = min(mismatch_score, gap_penalty)
-        
-        score_range = max_val - min_val
-        
-        assert score_range > 0, "Invalid score range"
-        normalized_scores = (x_penalties - min_val) / score_range
-        
-        if not (np.all(normalized_scores >= -1e-9) and np.all(normalized_scores <= 1.0 + 1e-9)):
-            raise RuntimeError(
-                "Normalization failed. Scores outside [0, 1] range detected. "
-                f"Min score: {np.min(normalized_scores)}, "
-                f"Max score: {np.max(normalized_scores)}"
-            )
-
-        return normalized_scores, alignment_path
-
-    return x_penalties, alignment_path
-
-def compute_continuous_grid(x, y, *, gap_penalty):
-    """
-    x, y: numpy arrays of shape (N, D) and (M, D) representing sequences of vectors.
-    """
-    len_x, len_y = x.shape[0], y.shape[0]
+    # 4. Normalization (Linear Map)
+    # Our internal logic now guarantees scores are in roughly [-1, 1]
+    # We map this to [0, 1] for the frontend visualization.
+    #   1.0  (Perfect Match) -> 1.0
+    #   0.0  (Neutral)       -> 0.5
+    #   -1.0 (Gap/Mismatch)  -> 0.0
     
-    # 1. Pre-compute Cosine Similarity Matrix (N x M)
-    # Normalize vectors to unit length
-    x_norm = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-9)
-    y_norm = y / (np.linalg.norm(y, axis=1, keepdims=True) + 1e-9)
-    
-    # Dot product of normalized vectors = Cosine Similarity
-    # Range: [-1.0, 1.0]
-    sim_matrix = np.dot(x_norm, y_norm.T)
+    # Clamp to ensure strict lower bound if gap_penalty < -1.0
+    scores_clamped = np.maximum(x_penalties, -1.0)
+    normalized_scores = (scores_clamped + 1.0) / 2.0
 
-    # 2. Fill DP Grid
-    grid = np.zeros((len_x + 1, len_y + 1))
-    
-    # Initialize first column with gap penalties (forcing x to be accounted for)
-    grid[1:, 0] = np.arange(1, len_x + 1) * gap_penalty
-    
-    # No penalty for starting in the middle of y (grid[0, :] remains 0)
-
-    for i in range(1, len_x + 1):
-        for j in range(1, len_y + 1):
-            score = sim_matrix[i-1, j-1]
-            
-            grid[i, j] = max(
-                grid[i-1, j] + gap_penalty,   # Gap in y
-                grid[i, j-1] + gap_penalty,   # Gap in x
-                grid[i-1, j-1] + score        # Match/Substitution
-            )
-            
-    return grid, sim_matrix
-
-def score_continuous_frames(learner, reference, *, gap_penalty=-0.5, normalize=False, alpha=None):
-    """
-    Args:
-        alpha (float, optional): If provided, applies exponential scaling 
-        to the normalized scores: exp(-alpha * (1 - score)). 
-        This sharpens the contrast for continuous similarity metrics.
-    """
-    x = learner
-    y = reference
-
-    # Step 1: Compute grid and retrieve similarity matrix
-    grid, sim_matrix = compute_continuous_grid(x, y, gap_penalty=gap_penalty)
-
-    # Step 2: Backtrack
-    x_penalties = np.zeros(len(x))
-    alignment_path = []
-
-    i = len(x)
-    j = np.argmax(grid[i, :])  # Start at the max in the last row (semi-global)
-
-    while i > 0 and j > 0:
-        # The score for aligning these two specific vectors
-        current_match_score = sim_matrix[i-1, j-1]
-
-        # Check diagonal (Match/Substitution)
-        # We use a small epsilon for float comparison
-        if np.isclose(grid[i, j], grid[i-1, j-1] + current_match_score):
-            x_penalties[i-1] = current_match_score
-            alignment_path.append((i-1, j-1))
-            i -= 1
-            j -= 1
-        # Check vertical (Gap in reference)
-        elif np.isclose(grid[i, j], grid[i-1, j] + gap_penalty):
-            x_penalties[i-1] = gap_penalty
-            alignment_path.append((i-1, None))
-            i -= 1
-        # Check horizontal (Gap in learner)
-        else:
-            alignment_path.append((None, j-1))
-            j -= 1
-
-    # Handle remaining start gaps
-    while i > 0:
-        x_penalties[i-1] = gap_penalty
-        alignment_path.append((i-1, None))
-        i -= 1
-
-    alignment_path.reverse()
-
-    if normalize:
-        # Cosine similarity is [-1, 1], Gap penalty is usually negative.
-        max_val = 1.0
-        min_val = min(-1.0, gap_penalty)
-        
-        score_range = max_val - min_val
-        normalized_scores = (x_penalties - min_val) / score_range
-        
-        # Apply sharpening if alpha is provided
-        if alpha is not None:
-            # We treat (1 - score) as the "distance" and apply a Gaussian-like kernel
-            normalized_scores = np.exp(-alpha * (1 - normalized_scores))
-
-        return normalized_scores, alignment_path
-
-    return x_penalties, alignment_path
+    return normalized_scores, alignment_path
 
 def plot_waveform(waveform, sample_rate, *, agreement_scores, frame_duration=0.02):
     waveform = waveform.numpy()
@@ -187,7 +172,7 @@ def plot_waveform(waveform, sample_rate, *, agreement_scores, frame_duration=0.0
     num_channels, num_frames = waveform.shape
     time_axis = np.arange(0, num_frames) / sample_rate
 
-    fig, ax = plt.subplots(num_channels, 1, figsize=(16,3))
+    fig, ax = plt.subplots(num_channels, 1, figsize=(16, 3))
     if num_channels == 1:
         ax = [ax]
     for c in range(num_channels):
@@ -197,23 +182,23 @@ def plot_waveform(waveform, sample_rate, *, agreement_scores, frame_duration=0.0
             ax[c].set_ylabel(f"Channel {c+1}")
 
     assert num_channels == 1
-    agreement_scores = np.convolve(agreement_scores, np.ones(3)/3, mode='same')
+    agreement_scores = np.convolve(agreement_scores, np.ones(3) / 3, mode="same")
     min_score = 0.4
-    shade = (-1*agreement_scores - min_score).clip(0, 1) * (1 / (1-min_score))
+    shade = (-1 * agreement_scores - min_score).clip(0, 1) * (1 / (1 - min_score))
 
-    shading_intensity = (shade*0.8).reshape(1, -1)
+    shading_intensity = (shade * 0.8).reshape(1, -1)
 
-    time_mesh_coordinates = np.arange(0, len(agreement_scores)+1) * frame_duration
+    time_mesh_coordinates = np.arange(0, len(agreement_scores) + 1) * frame_duration
     ymin, ymax = ax[0].get_ylim()
     mesh = ax[0].pcolormesh(
         time_mesh_coordinates,
         np.array([ymin, ymax]),
         shading_intensity,
-        cmap='Reds',  # Or 'viridis', 'plasma', 'coolwarm', etc.
+        cmap="Reds",  # Or 'viridis', 'plasma', 'coolwarm', etc.
         vmin=0,
         vmax=1,
         alpha=0.5,
-        shading='auto',
+        shading="auto",
     )
 
     # Bring the waveform line to the front
@@ -235,12 +220,12 @@ def build_alignments(path, learner_len, reference_len, *, fill_backwards=False):
     of the learner sequence are mapped to `reference_len`.
 
     Args:
-        path (list[tuple(int | None, int | None)]): 
-            The alignment path from an alignment algorithm. 
+        path (list[tuple(int | None, int | None)]):
+            The alignment path from an alignment algorithm.
             Expected as a list of `(learner_idx, reference_idx)` tuples.
-        learner_len (int): 
+        learner_len (int):
             The total number of frames in the learner sequence.
-        reference_len (int): 
+        reference_len (int):
             The total number of frames in the reference sequence. This is
             used as the fill value for insertions at the end of the path.
         fill_backwards (bool):
@@ -249,14 +234,14 @@ def build_alignments(path, learner_len, reference_len, *, fill_backwards=False):
             traversal. If `False`, they are filled with `-1`.
 
     Returns:
-        np.ndarray: 
+        np.ndarray:
             A 1D NumPy array of shape `(learner_len,)`, where the value
             at index `i` is the reference frame index that learner
             frame `i` is mapped to.
     """
     filled_map = np.zeros(learner_len, dtype=int)
     last_ref_idx = reference_len
-    for i in range(len(path)-1, -1, -1):
+    for i in range(len(path) - 1, -1, -1):
         learner_idx, reference_idx = path[i]
         if learner_idx is None:
             continue
