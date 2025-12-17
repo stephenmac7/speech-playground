@@ -74,24 +74,70 @@ export function buildContinuousRegions(
 	return regions;
 }
 
-export function buildCombinedSegmentRegions(
-	scores: number[], // size N
-	segments: number[][], // size N
+// New helper function
+function buildIndividualSegmentRegions(
+	scores: number[],
+	segments: number[][],
 	alignmentMap?: number[],
 	modelIndexMap?: number[]
 ): Region[] {
 	const regions: Region[] = [];
-	let currentRegion: { startFrame: number; scores: number[] } | undefined;
-	let seenGoodFrames = 0;
+	scores.forEach((score, i) => {
+		const isInsertion = alignmentMap && alignmentMap[i] === -1;
+		if (score < 0.5 || isInsertion) {
+			const opacity = 0.8 * (1 - score);
+			const startFrame = i;
+			const endFrame = i + 1; // Always 1 frame long
 
-	const createRegion = (region: { startFrame: number; endFrame: number; scores: number[] }) => {
-		const avg = region.scores.reduce((a, b) => a + b, 0) / region.scores.length;
+			let content = '';
+			if (!isInsertion && alignmentMap) {
+				const originalIndex = alignmentMap[i];
+				if (modelIndexMap && originalIndex !== -1) {
+					content = String(modelIndexMap[originalIndex]);
+				} else {
+					content = String(originalIndex);
+				}
+			}
+
+			regions.push({
+				id: `region-${startFrame}-${endFrame}`,
+				start: segments[startFrame][0],
+				end: segments[endFrame - 1][1], // segments[i][1]
+				color: isInsertion ? `rgba(255, 255, 0, 0.5)` : `rgba(255, 0, 0, ${opacity})`,
+				content
+			});
+		}
+	});
+	return regions;
+}
+
+export function buildSegmentRegions(
+	scores: number[], // size N
+	segments: number[][], // size N
+	combineRegions: boolean = false,
+	alignmentMap?: number[],
+	modelIndexMap?: number[]
+): Region[] {
+	const regions: Region[] = [];
+
+	if (!combineRegions) {
+		return buildIndividualSegmentRegions(scores, segments, alignmentMap, modelIndexMap);
+	}
+
+	let currentBadRegionStart: number | undefined;
+	let currentBadRegionScores: number[] = [];
+	let consecutiveGoodFrames = 0; // Number of good frames encountered since the last bad frame
+
+	const processRegion = (startFrame: number, endFrame: number, regionScores: number[]) => {
+        if (regionScores.length === 0) return; // Should not happen with this logic, but as a safeguard
+
+		const avg = regionScores.reduce((a, b) => a + b, 0) / regionScores.length;
 
 		let isPureInsertion = true;
 		const validIndices: number[] = [];
 
 		if (alignmentMap) {
-			for (let k = region.startFrame; k < region.endFrame; k++) {
+			for (let k = startFrame; k < endFrame; k++) {
 				const idx = alignmentMap[k];
 				if (idx !== -1) {
 					isPureInsertion = false;
@@ -132,104 +178,42 @@ export function buildCombinedSegmentRegions(
 		}
 
 		regions.push({
-			id: `region-${region.startFrame}-${region.endFrame}`,
-			start: segments[region.startFrame][0],
-			end: segments[region.endFrame - 1][1],
+			id: `region-${startFrame}-${endFrame}`,
+			start: segments[startFrame][0],
+			end: segments[endFrame - 1][1],
 			color,
 			content
 		});
 	};
 
 	scores.forEach((score, i) => {
-		let isBad = false;
-		if (alignmentMap && alignmentMap[i] === -1) {
-			isBad = true;
-		} else if (score < 0.5) {
-			isBad = true;
-		}
+		const isBadFrame = (alignmentMap && alignmentMap[i] === -1) || score < 0.5;
 
-		if (isBad) {
-			if (!currentRegion) {
-				currentRegion = { startFrame: i, scores: [score] };
-				seenGoodFrames = 0;
-			} else {
-				currentRegion.scores.push(score);
-				seenGoodFrames = 0;
+		if (isBadFrame) {
+			if (currentBadRegionStart === undefined) {
+				currentBadRegionStart = i;
 			}
-		} else {
-			// OK frame
-			if (currentRegion && seenGoodFrames < 2) {
-				currentRegion.scores.push(score);
-				seenGoodFrames++;
-			} else if (currentRegion) {
-				// End region
-				const lastBadFrame = i - seenGoodFrames;
-				createRegion({
-					startFrame: currentRegion.startFrame,
-					endFrame: lastBadFrame,
-					scores: currentRegion.scores.slice(
-						0,
-						lastBadFrame - (i - currentRegion.scores.length)
-					)
-				});
-				currentRegion = undefined;
-			}
-		}
-	});
-
-	// Handle a region that might be open at the end -- make sure to deal with last good frames
-	if (currentRegion) {
-		const lastBadFrame = scores.length - seenGoodFrames;
-		createRegion({
-			startFrame: currentRegion.startFrame,
-			endFrame: lastBadFrame,
-			scores: currentRegion.scores.slice(
-				0,
-				lastBadFrame - (scores.length - currentRegion.scores.length)
-			)
-		});
-	}
-
-	return regions;
-}
-
-export function buildSegmentRegions(
-	scores: number[], // size N
-	segments: number[][], // size N
-	combineRegions: boolean = false,
-	alignmentMap?: number[],
-	modelIndexMap?: number[]
-): Region[] {
-	if (combineRegions) {
-		return buildCombinedSegmentRegions(scores, segments, alignmentMap, modelIndexMap);
-	}
-	const regions: Region[] = [];
-	scores.forEach((score, i) => {
-		const isInsertion = alignmentMap && alignmentMap[i] === -1;
-		if (score < 0.5 || isInsertion) {
-			const opacity = 0.8 * (1 - score);
-			const startFrame = i;
-			const endFrame = i + 1;
-
-			let content = '';
-			if (!isInsertion && alignmentMap) {
-				const originalIndex = alignmentMap[i];
-				if (modelIndexMap && originalIndex !== -1) {
-					content = String(modelIndexMap[originalIndex]);
-				} else {
-					content = String(originalIndex);
+			currentBadRegionScores.push(score);
+			consecutiveGoodFrames = 0; // Reset good frame counter
+		} else { // It's a good frame
+			if (currentBadRegionStart !== undefined) {
+				consecutiveGoodFrames++;
+				if (consecutiveGoodFrames > 2) { // Hysteresis threshold (2 good frames to break a bad region)
+					// Finalize the bad region that ended before these good frames started
+					processRegion(currentBadRegionStart, i - consecutiveGoodFrames + 1, currentBadRegionScores);
+					currentBadRegionStart = undefined;
+					currentBadRegionScores = [];
+					consecutiveGoodFrames = 0;
 				}
 			}
-
-			regions.push({
-				id: `region-${startFrame}-${endFrame}`,
-				start: segments[startFrame][0],
-				end: segments[endFrame - 1][1],
-				color: isInsertion ? `rgba(255, 255, 0, 0.5)` : `rgba(255, 0, 0, ${opacity})`,
-				content
-			});
 		}
 	});
+
+	// After the loop, if there's an open bad region, process it.
+	if (currentBadRegionStart !== undefined && currentBadRegionScores.length > 0) {
+		processRegion(currentBadRegionStart, scores.length - consecutiveGoodFrames, currentBadRegionScores);
+	}
+
 	return regions;
 }
 
