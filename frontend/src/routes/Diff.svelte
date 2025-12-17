@@ -114,12 +114,13 @@
 
 		if (modelSegments) {
 			const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
+			const isStandardDiscrete = isFixedRateEncoder && discretize && !dpdp;
 
-			if (isFixedRateEncoder && discretize && !dpdp) {
+			if (isStandardDiscrete && combineRegions) {
 				return buildCombinedModelRegions(modelSegments, coveredIndices);
 			}
 
-			if (showIndividualSegments) {
+			if (showIndividualSegments || (isStandardDiscrete && !combineRegions)) {
 				return {
 					regions: modelSegments.map((segment, i) => ({
 						id: `model-segment-${i}`,
