@@ -168,6 +168,19 @@
 		return { start: 0, end: duration };
 	}
 
+	function playSelection(start?: number, end?: number, playOnOtherViewer: boolean = false) {
+		if (playOnOtherViewer && compareWith) {
+			const otherStart = mapTime(start);
+			const otherEnd = mapTime(end);
+			if (otherStart !== undefined && otherEnd !== undefined) {
+				// wavesurfer.play handles start > end by playing from min(start, end) to max(start, end)
+				compareWith.other.play(otherStart, otherEnd);
+			}
+		} else {
+			wavesurfer.play(start, end);
+		}
+	}
+
 	function handleRegionBarMouseDown(e: MouseEvent) {
 		if (e.button !== 0) return;
 		e.preventDefault();
@@ -226,15 +239,7 @@
 			end = region.end;
 		}
 
-		if (playOther && compareWith && compareWith.alignedTimes) {
-			const t0 = mapTime(start);
-			const t1 = mapTime(end);
-			if (t0 !== undefined && t1 !== undefined) {
-				compareWith.other.play(t0, t1);
-			}
-		} else {
-			wavesurfer.play(start, end);
-		}
+		playSelection(start, end, playOther);
 
 		dragStart = undefined;
 		playOther = false;
@@ -314,24 +319,14 @@
 		wavesurfer.on('dragend', (relativeX) => {
 			if (!dragStart) return;
 			const dragEnd = relativeX * duration;
-			if (dragStart > dragEnd) {
+			if (dragStart >= dragEnd) {
 				// probably just meant to seek
 				dragStart = undefined;
 				playOther = false;
 				if (clickToPlay) wavesurfer.play();
 				return;
 			}
-			if (playOther) {
-				if (compareWith && compareWith.alignedTimes) {
-					const otherStartTime = mapTime(dragStart);
-					const otherEndTime = mapTime(dragEnd);
-					compareWith.other.play(otherStartTime, otherEndTime);
-				} else {
-					console.warn('No compareWith data to play other audio.');
-				}
-			} else {
-				wavesurfer.play(dragStart, dragEnd);
-			}
+			playSelection(dragStart, dragEnd, playOther);
 			dragStart = undefined;
 			playOther = false;
 		});
