@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Optional
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile, File
+from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
 from pathlib import Path
@@ -173,6 +173,22 @@ def data_endpoint(filename: str):
     return streaming_response_of_audio_file(path, apply_vad=False)
 
 
+def get_comparison_audio(
+    encoder: str = Form(...),
+    file: UploadFile = File(...),
+    model_file: UploadFile = File(...),
+):
+    model = MODELS_MAP.get(encoder)
+    if model is None:
+        raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
+
+    xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
+    xwav = model.resample(xwav.squeeze(0), xsr)
+    ywav, ysr = torchaudio.load_with_torchcodec(file.file)
+    ywav = model.resample(ywav.squeeze(0), ysr)
+    return model, xwav, ywav
+
+
 @app.post("/ifmdd")
 def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
     ywav, sr = torchaudio.load_with_torchcodec(file.file)
@@ -196,22 +212,13 @@ def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
 
 @app.post("/compare")
 def compare_endpoint(
-    file: UploadFile = File(...),
-    model_file: UploadFile = File(...),
-    encoder: str = Form(...),
+    audio_data: tuple = Depends(get_comparison_audio),
     discretizer: Optional[str] = Form(None),
     dist_method: Optional[str] = Form(None),
     alignment_method: Optional[str] = Form(None),
     alpha: Optional[float] = Form(None),
 ):
-    model = MODELS_MAP.get(encoder)
-    if model is None:
-        raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
-
-    xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
-    xwav = model.resample(xwav.squeeze(0), xsr)
-    ywav, ysr = torchaudio.load_with_torchcodec(file.file)
-    ywav = model.resample(ywav.squeeze(0), ysr)
+    model, xwav, ywav = audio_data
 
     start_time = time.time()
     x = model.encode(xwav)
@@ -274,7 +281,7 @@ def compare_endpoint(
                 y_scores_sum[j] += alignment.localCostMatrix[i, j]
                 y_scores_count[j] += 1
 
-            y_positions = np.divide(
+            y_avg_costs = np.divide(
                 y_scores_sum,
                 y_scores_count,
                 out=np.full_like(y_scores_sum, np.nan),  # Use nan or inf for 0 counts
@@ -282,9 +289,9 @@ def compare_endpoint(
             )
 
             if dist_method == "euclidean":
-                scores = np.exp(-alpha * (y_positions**2))
+                scores = np.exp(-alpha * (y_avg_costs**2))
             else:
-                scores = np.exp(-alpha * y_positions)
+                scores = np.exp(-alpha * y_avg_costs)
 
             aligned_times = []
             for i, j in zip(alignment.index1, alignment.index2):
@@ -303,22 +310,13 @@ def compare_endpoint(
 
 @app.post("/compare_dpdp")
 def compare_dpdp_endpoint(
-    file: UploadFile = File(...),
-    model_file: UploadFile = File(...),
-    encoder: str = Form(...),
+    audio_data: tuple = Depends(get_comparison_audio),
     gamma: float = Form(...),
     discretizer: str = Form(...),
 ):
     from speech_playground.tokenizer.dpdp import DPDPTokenizer
 
-    model = MODELS_MAP.get(encoder)
-    if model is None:
-        raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
-
-    xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
-    xwav = model.resample(xwav.squeeze(0), xsr)
-    ywav, ysr = torchaudio.load_with_torchcodec(file.file)
-    ywav = model.resample(ywav.squeeze(0), ysr)
+    model, xwav, ywav = audio_data
 
     x = model.to_continuous_features(model.encode(xwav))
     y = model.to_continuous_features(model.encode(ywav))
