@@ -25,6 +25,7 @@
 
 	$effect(() => {
 		const controller = new AbortController();
+		let aborted = false;
 
 		(async () => {
 			if (!audio) {
@@ -37,18 +38,21 @@
 			formData.append('transcript', transcript);
 			try {
 				const result = await postJson<Alignment>('/api/align', formData, controller.signal);
-				alignment = result;
+				if (!aborted) alignment = result;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError') {
 					reportError('Error fetching intervals.', e);
 					alignment = {};
 				}
 			} finally {
-				gettingIntervals = false;
+				if (!aborted) gettingIntervals = false;
 			}
 		})();
 
-		return () => controller.abort();
+		return () => {
+			aborted = true;
+			controller.abort();
+		};
 	});
 </script>
 
