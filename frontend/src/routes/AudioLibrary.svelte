@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import { reportError } from '$lib/errors';
 
-	import { db } from '$lib/db';
+	import { db, type AudioTrack } from '$lib/db';
 	import { liveQuery } from 'dexie';
 
 	let {
@@ -27,6 +27,33 @@
 	}
 
 	let tracks = liveQuery(() => db.audio_tracks.toArray());
+
+        // this is a back so that that we get less reloads when the track list updates
+        // maybe it can be removed when dexie gets better
+	const blobCache = new Map<number, Blob>();
+
+	let stableTracks = $derived.by(() => {
+		if (!$tracks) return [];
+		return $tracks.map((track) => {
+			if (!track.data) {
+				blobCache.delete(track.id);
+				return track;
+			}
+
+			const cached = blobCache.get(track.id);
+			if (
+				cached &&
+				cached !== track.data &&
+				cached.size === track.data.size &&
+				cached.type === track.data.type
+			) {
+				return { ...track, data: cached };
+			}
+
+			blobCache.set(track.id, track.data);
+			return track;
+		});
+	});
 
 	$effect(() => {
 		if (!$tracks) {
@@ -54,10 +81,12 @@
 	}
 
 	function deleteTrack(id: number) {
+		blobCache.delete(id);
 		db.audio_tracks.delete(id);
 	}
 
 	function updateTrack(id: number, blob: Blob | undefined) {
+		blobCache.delete(id);
 		db.audio_tracks.update(id, { data: blob });
 	}
 
@@ -116,7 +145,7 @@
 </div>
 
 <div class="audio-library">
-	{#each $tracks as track (track.id)}
+	{#each stableTracks as track (track.id)}
 		<fieldset
 			class="track"
 			class:selecting={selectedTrackRequestKey !== null}
