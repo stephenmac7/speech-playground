@@ -83,6 +83,9 @@
 	// Continuous diff controls
 	let trigger = $state(0.6);
 	let dist_method = $state('default');
+	let alignment_method = $state('default');
+	let customAlpha = $state(false);
+	let alpha = $state(1.0);
 
 	let loading = $state(false);
 
@@ -99,10 +102,15 @@
 		return selectedEncoderOption.supports_dpdp;
 	});
 	const isFixedRateEncoder = $derived(selectedEncoderOption?.has_fixed_frame_rate ?? true);
+	const isSegmentalAlignment = $derived(
+		!discretize &&
+			(alignment_method === 'segmental' || (alignment_method === 'default' && !isFixedRateEncoder))
+	);
 
 	// ---------- Derived regions ----------
 	const combinedModelData = $derived.by(() => {
-		const hasVariableSegments = !isFixedRateEncoder || (discretize && dpdp);
+		const showIndividualSegments =
+			!isFixedRateEncoder || (discretize && dpdp) || isSegmentalAlignment;
 
 		if (modelSegments) {
 			const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
@@ -111,7 +119,7 @@
 				return buildCombinedModelRegions(modelSegments, coveredIndices);
 			}
 
-			if (hasVariableSegments) {
+			if (showIndividualSegments) {
 				return {
 					regions: modelSegments.map((segment, i) => ({
 						id: `model-segment-${i}`,
@@ -142,7 +150,7 @@
 				);
 			}
 
-			if (alignmentMap && !isFixedRateEncoder) {
+			if (alignmentMap && isSegmentalAlignment) {
 				// Variable rate / segments mode (e.g. Sylber)
 				return learnerSegments.map((segment, i) => {
 					const score = scores[i];
@@ -258,8 +266,16 @@
 				};
 				if (discretize) {
 					formData.append('discretizer', discretizer);
-				} else if (dist_method !== 'default') {
-					formData.append('dist_method', dist_method);
+				} else {
+					if (dist_method !== 'default') {
+						formData.append('dist_method', dist_method);
+					}
+					if (alignment_method !== 'default') {
+						formData.append('alignment_method', alignment_method);
+					}
+					if (customAlpha) {
+						formData.append('alpha', alpha.toString());
+					}
 				}
 				if (discretize && dpdp) {
 					formData.append('gamma', gamma);
@@ -383,7 +399,9 @@
 	{/if}
 	<details>
 		<summary>Details</summary>
-		<p>{JSON.stringify(scores)}</p>
+		<p>
+			{scores.map((s) => s.toFixed(2)).join(', ')}
+		</p>
 	</details>
 
 	<div class="controls">
@@ -482,8 +500,33 @@
 						</select>
 					</label>
 					<label>
+						Alignment Method:
+						<select bind:value={alignment_method}>
+							<option value="default"
+								>Default{selectedEncoderOption && !isFixedRateEncoder
+									? ' (Segmental)'
+									: ' (DTW)'}
+							</option>
+							<option value="dtw">DTW</option>
+							<option value="segmental">Segmental</option>
+						</select>
+					</label>
+					<label>
 						Trigger:
 						<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />
+					</label>
+					<label>
+						Custom Alpha:
+						<input type="checkbox" bind:checked={customAlpha} />
+					</label>
+					<label class:disabled={!customAlpha}>
+						Alpha:
+						<input
+							type="number"
+							step="any"
+							bind:value={alpha}
+							disabled={!customAlpha}
+						/>
 					</label>
 				{/if}
 			</fieldset>

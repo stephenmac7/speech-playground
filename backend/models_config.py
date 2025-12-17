@@ -61,7 +61,7 @@ class ModelMetadata(ABC):
     @property
     def euclidean_alpha(self):
         """Alpha parameter for converting distances to scores."""
-        return -0.00173
+        return 0.00173
 
     @property
     def cosine_alpha(self):
@@ -141,7 +141,7 @@ class HubertMetadata(ModelMetadata):
 
     @property
     def euclidean_alpha(self):
-        return -0.02
+        return 0.02
 
 
 
@@ -242,7 +242,7 @@ class InversionMetadata(ModelMetadata):
     @property
     def euclidean_alpha(self):
         """Alpha parameter for converting distances to scores."""
-        return -0.7
+        return 0.7
     
     @property
     def default_dist_method(self):
@@ -284,6 +284,11 @@ class SylberV1Metadata(SylberMetadata):
         waveform = (waveform - waveform.mean()) / (waveform.std() + 1e-8)
         return self.load().encode_one(waveform)
 
+    @property
+    def cosine_alpha(self):
+        """Alpha parameter for sharpening cosine distance."""
+        return 6.0
+
 
 class SylberV2Metadata(SylberMetadata):
     def __init__(self, *, checkpoint_path: str | os.PathLike):
@@ -304,6 +309,18 @@ class SylberV2Metadata(SylberMetadata):
 
     def encode(self, waveform: torch.Tensor):
         return self.load().encode_one(waveform)
+
+    @property
+    def cosine_alpha(self):
+        return 20.0
+
+    @property
+    def euclidean_alpha(self):
+        return 0.06
+
+    def to_continuous_features(self, encoded):
+        return encoded["segment_features"].cpu().numpy()
+
 
 
 class SyllableLMMetadata(ModelMetadata):
@@ -383,7 +400,6 @@ syllablelm_checkpoints_path = os.getenv("SYLLABLELM_CHECKPOINTS_PATH")
 if syllablelm_checkpoints_path is not None:
     root = Path(syllablelm_checkpoints_path)
     for checkpoint_path in sorted(list(root.glob("SylBoost_*.pth"))):
-        print('checking checkpoint_path:', checkpoint_path)
         name_parts = checkpoint_path.stem.split("_")
         model_key = name_parts[-1][0] + "." + name_parts[-1][1:]
         kmeans_path = root / f"{checkpoint_path.stem}_kmeans.npy"
@@ -399,7 +415,6 @@ if syllablelm_checkpoints_path is not None:
                 model_key=model_key,
             )
         )
-    print(MODELS)
 else:
     print("WARNING: SYLLABLE_LM_CHECKPOINTS_PATH not set; skipping SyllableLM encoder.")
 

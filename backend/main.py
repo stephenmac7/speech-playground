@@ -24,7 +24,7 @@ import dtw
 import torchaudio
 import torchaudio.functional as F
 
-from speech_playground.alignment import score_frames, build_alignments, score_continuous_frames
+from speech_playground.alignment import score_alignment, build_alignments
 
 # Loads from backend/.env
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
@@ -138,7 +138,7 @@ def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_filena
     ywav, sr = torchaudio.load_with_torchcodec(file)
 
     if apply_vad:
-        ywav = F.vad(ywav, sr)
+        ywav = vad(ywav, sr)
         if ywav.shape[1] == 0:
             raise HTTPException(status_code=400, detail="No speech detected after VAD.")
 
@@ -201,6 +201,8 @@ def compare_endpoint(
     encoder: str = Form(...),
     discretizer: Optional[str] = Form(None),
     dist_method: Optional[str] = Form(None),
+    alignment_method: Optional[str] = Form(None),
+    alpha: Optional[float] = Form(None),
 ):
     model = MODELS_MAP.get(encoder)
     if model is None:
@@ -225,29 +227,35 @@ def compare_endpoint(
     else:
         extra_results = {}
 
-    aligned_times = []
     if discretizer is not None:
         xtokens = model.discretize(x, discretizer)
         ytokens = model.discretize(y, discretizer)
-        scores, path = score_frames(ytokens, xtokens, normalize=True)
+        scores, path = score_alignment(ytokens, xtokens)
         alignment_map = build_alignments(path, len(ytokens), len(xtokens))
 
-        last_match = None
+        aligned_times = []
         for y_idx, x_idx in path:
             if y_idx is not None and x_idx is not None:
                 aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
-                last_match = (y_idx, x_idx)
-
-        if last_match:
-            y_idx, x_idx = last_match
-            aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
+                aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
     else:
+        if alpha is None:
+            alpha = model.euclidean_alpha if dist_method == "euclidean" else model.cosine_alpha
+
         x_feats = model.to_continuous_features(x)
         y_feats = model.to_continuous_features(y)
         dist_method = dist_method or model.default_dist_method
 
-        if not model.has_fixed_frame_rate:
-            scores, path = score_continuous_frames(y_feats, x_feats, normalize=True, alpha=model.cosine_alpha)
+        use_segmental = False
+        if alignment_method == "segmental":
+            use_segmental = True
+        elif alignment_method == "dtw":
+            use_segmental = False
+        else:
+            use_segmental = not model.has_fixed_frame_rate
+
+        if use_segmental:
+            scores, path = score_alignment(y_feats, x_feats, alpha=alpha, dist_method=dist_method, tmpdir=tmpdir)
             alignment_map = build_alignments(path, len(y_feats), len(x_feats))
 
             aligned_times = []
@@ -274,13 +282,14 @@ def compare_endpoint(
             )
 
             if dist_method == "euclidean":
-                scores = np.exp(model.euclidean_alpha * (y_positions**2))
+                scores = np.exp(-alpha * (y_positions**2))
             else:
-                scores = np.exp(-model.cosine_alpha * y_positions)
+                scores = np.exp(-alpha * y_positions)
 
             aligned_times = []
             for i, j in zip(alignment.index1, alignment.index2):
                 aligned_times.append([y_segments[j][0], x_segments[i][0]])
+                aligned_times.append([y_segments[j][1], x_segments[i][1]])
 
             if len(alignment.index1) > 0:
                 last_x = alignment.index1[-1]
@@ -325,7 +334,7 @@ def compare_dpdp_endpoint(
     xcodes, xboundaries = tokenizer.tokenize_one(x, gamma=gamma)
     ycodes, yboundaries = tokenizer.tokenize_one(y, gamma=gamma)
 
-    y_mismatches, path = score_frames(ycodes, xcodes, normalize=True)
+    y_mismatches, path = score_alignment(ycodes, xcodes)
     alignment_map = build_alignments(path, len(ycodes), len(xcodes))
 
     aligned_times = []
