@@ -143,7 +143,21 @@ class HubertMetadata(ModelMetadata):
     def euclidean_alpha(self):
         return 0.02
 
+class WavLMMetadata(ModelMetadata):
+    slug = "wavlm_base_plus"
+    name = "WavLM Base Plus"
 
+    @lru_cache()
+    def load(self):
+        from speech_playground.encoder.wavlm import WavLMEncoder
+
+        return WavLMEncoder()
+
+    def discretizers(self):
+        return []
+
+    def encode(self, waveform: torch.Tensor):
+        return self.load().encode_one(waveform).cpu().numpy()
 
 @lru_cache()
 def get_kanade(variant: str):
@@ -388,6 +402,7 @@ if sylber2_checkpoint_path is not None:
 
 MODELS = [
     HubertMetadata(),
+    WavLMMetadata(),
     *SYLBER_MODELS,
     *(KanadeMetadata(variant=model["variant"], name=model["name"]) for model in KANADE_MODELS),
 ]
