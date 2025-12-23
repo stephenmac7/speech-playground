@@ -67,6 +67,7 @@
 	let combineRegions = $state(true);
 	let dpdp = $state(true);
 	let gamma = $state('0.2');
+	let alignment_mode = $state('global');
 	let scores = $state<number[]>([]);
 	let alignmentMap = $state<number[] | undefined>();
 	let alignedTimes = $state<number[][] | undefined>();
@@ -160,7 +161,7 @@
 						opacity = 0.8 * ((trigger - score) / trigger);
 					}
 					const modelIndex = alignmentMap![i];
-					if (modelIndex === -1) {
+					if (modelIndex === -1 || modelIndex === undefined) {
 						return {
 							id: 'segment-' + i,
 							start: segment[0],
@@ -280,8 +281,10 @@
 				}
 				if (discretize && dpdp) {
 					formData.append('gamma', gamma);
+					formData.append('alignment_mode', alignment_mode);
 					data = await postJson(`/api/compare_dpdp`, formData, controller.signal);
 				} else {
+					formData.append('alignment_mode', alignment_mode);
 					data = await postJson(`/api/compare`, formData, controller.signal);
 				}
 				scores = data.scores ?? [];
@@ -456,6 +459,13 @@
 						Combine Regions:
 						<input type="checkbox" bind:checked={combineRegions} />
 					</label>
+					<label>
+						Alignment Mode:
+						<select bind:value={alignment_mode}>
+							<option value="global">Global</option>
+							<option value="semiglobal">Semi-Global</option>
+						</select>
+					</label>
 					<label class="label-with-tooltip" class:disabled={!supportsDpdp}>
 						<span>DPDP:</span>
 						<Tooltip align="left">
@@ -482,7 +492,7 @@
 							type="range"
 							min="0.0"
 							max="1.0"
-							step="0.1"
+							step="0.01"
 							bind:value={gamma}
 							disabled={!dpdp}
 						/>
@@ -512,6 +522,15 @@
 							<option value="segmental">Segmental</option>
 						</select>
 					</label>
+					{#if isSegmentalAlignment}
+						<label>
+							Alignment Mode:
+							<select bind:value={alignment_mode}>
+								<option value="global">Global</option>
+								<option value="semiglobal">Semi-Global</option>
+							</select>
+						</label>
+					{/if}
 					<label>
 						Trigger:
 						<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />

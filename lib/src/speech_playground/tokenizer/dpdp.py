@@ -69,7 +69,7 @@ def _backtrack(alpha, P):
 
 
 class DPDPTokenizer:
-    def __init__(self, *, cluster_centers=None):
+    def __init__(self, *, cluster_centers=None, gamma=0.2):
         if cluster_centers is None:
             default_kmeans, _ = torch.hub.load(
                 "bshall/dusted:main", "kmeans", language="english", trust_repo=True, verbose=False
@@ -78,9 +78,11 @@ class DPDPTokenizer:
         else:
             self.cluster_centers = cluster_centers
 
-    def tokenize_one(self, features: np.ndarray, *, gamma=0.2) -> np.ndarray:
+        self.gamma = gamma
+
+    def tokenize_one(self, features: np.ndarray) -> np.ndarray:
         # features: (T, D)
-        return segment(features, self.cluster_centers, gamma=gamma)
+        return segment(features, self.cluster_centers, gamma=self.gamma)
 
 
 def expand(y_len: int, yfeatures: np.ndarray, yboundaries: np.ndarray) -> np.ndarray:
@@ -99,6 +101,6 @@ def expand(y_len: int, yfeatures: np.ndarray, yboundaries: np.ndarray) -> np.nda
     y_positions = np.zeros((y_len,) + yfeatures.shape[1:], dtype=yfeatures.dtype)
 
     for i in range(len(yfeatures)):
-        y_positions[yboundaries[i]:yboundaries[i+1]] = yfeatures[i]
+        y_positions[yboundaries[i] : yboundaries[i + 1]] = yfeatures[i]
 
     return y_positions

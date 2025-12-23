@@ -2011,11 +2011,19 @@ def get_quantile_borders_helper(
         q = n
         j = mid_
         costs = []
+        valid_path = True
         while q > 0:
+            if j <= 0 or back[q, j] == 0:
+                valid_path = False
+                break
             costs.append(dists[back[q, j], q - 1 + s] / back[q, j])
             q = q - back[q, j]
             j = j - 1
-        quantile_cost = np.quantile(costs, quantile)
+
+        if valid_path:
+            quantile_cost = np.quantile(costs, quantile)
+        else:
+            quantile_cost = float('inf')
 
         if quantile_cost > delta:
             min_ = mid_ + 1
@@ -2027,6 +2035,8 @@ def get_quantile_borders_helper(
     j = best_m
     borders = [q]
     while q > 0:
+        if j <= 0 or back[q, j] == 0:
+            break
         q = q - back[q, j]
         borders.append(q)
         j = j - 1
@@ -2120,6 +2130,13 @@ class SylBoostFeatureReader:
 
         for b_idx, (feats, mincut_boundaries) in enumerate(zip(features, mincut)):
             mincut_boundaries = np.array(mincut_boundaries)
+
+            if len(mincut_boundaries) < 2:
+                result["clusters_with_times"].append(np.zeros((3, 0), dtype=int))
+                result["cluster_features"] = result.get("cluster_features", [])
+                result["cluster_features"].append(torch.empty((0, feats.shape[-1]), device=feats.device))
+                continue
+
             meaned_features = torch.stack(
                 [
                     feats[mincut_boundaries[idx] + 1 : mincut_boundaries[idx + 1] - 1].mean(dim=0)

@@ -154,6 +154,10 @@ class HubertMetadata(ModelMetadata):
     def euclidean_alpha(self):
         return 0.02
 
+    @property
+    def cosine_alpha(self):
+        return 4.0
+
 
 class WavLMMetadata(ModelMetadata):
     slug = "wavlm-base-plus"
@@ -184,6 +188,10 @@ class WavLMMetadata(ModelMetadata):
         from speech_playground.tokenizer.kmeans import KMeansTokenizer
 
         return KMeansTokenizer(self.load_kmeans(discretizer_name)).tokenize_one(features)
+
+    @property
+    def cosine_alpha(self):
+        return 2.0
 
 
 @lru_cache()
@@ -228,6 +236,15 @@ class KanadeMetadata(ModelMetadata):
 
     def to_continuous_features(self, encoded):
         return encoded.content_embedding.float().cpu().numpy()
+
+    @property
+    def cosine_alpha(self):
+        if "25" in self.variant:
+            return 64.0
+        elif "12" in self.variant:
+            return 3.0
+        else:
+            raise ValueError(f"Unknown Kanade variant: {self.variant}")
 
 
 INVERSION_TOP = os.getenv("INVERSION_TOP")
@@ -286,7 +303,8 @@ class InversionMetadata(ModelMetadata):
     @property
     def euclidean_alpha(self):
         """Alpha parameter for converting distances to scores."""
-        return 0.7
+        # need high gap penalty -- about -0.5
+        return 0.35
 
     @property
     def default_dist_method(self):
@@ -329,7 +347,7 @@ class SylberV1Metadata(SylberMetadata):
     def encode(self, waveform: torch.Tensor):
         # Sylber expects normalized audio
         waveform = (waveform - waveform.mean()) / (waveform.std() + 1e-8)
-        return self.load().encode_one(waveform)
+        return self.load().encode_one(waveform, validate=False)
 
     @property
     def cosine_alpha(self):
@@ -360,7 +378,7 @@ class SylberV2Metadata(SylberMetadata):
 
     @property
     def cosine_alpha(self):
-        return 20.0
+        return 60.0
 
     @property
     def euclidean_alpha(self):
@@ -425,7 +443,10 @@ class SyllableLMMetadata(ModelMetadata):
     @property
     def cosine_alpha(self):
         """Alpha parameter for sharpening cosine distance."""
-        return 9.0
+        return 6.0
+
+    def cluster_centers(self, name: str) -> np.ndarray:
+        return self.load().cluster_centers
 
 
 SYLBER_MODELS = [SylberV1Metadata()]

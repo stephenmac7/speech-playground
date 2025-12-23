@@ -67,6 +67,10 @@ class SyllableLMEncoder:
         return results
 
     @property
+    def cluster_centers(self) -> np.ndarray:
+        return self.reader.kmeans_centroids.cluster_centers
+
+    @property
     def sample_rate(self) -> int:
         return 16000
 

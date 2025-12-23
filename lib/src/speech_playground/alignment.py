@@ -6,6 +6,9 @@ def compute_similarity_matrix(x, y, *, dist_method, match_score, mismatch_score,
     Computes a similarity matrix (N x M) normalized to range [-1, 1].
     Uses an RBF kernel for Euclidean distances to bound the scores.
     """
+    if x.shape[0] == 0 or y.shape[0] == 0:
+        return np.zeros((x.shape[0], y.shape[0]))
+
     # Case 1: Discrete Matching (e.g., integers, strings)
     if dist_method is None:
         matches = x[:, None] == y[None, :]
@@ -62,7 +65,7 @@ def compute_similarity_matrix(x, y, *, dist_method, match_score, mismatch_score,
         raise ValueError(f"Unknown dist_method: {dist_method}")
 
 
-def compute_alignment_grid(sim_matrix, gap_penalty):
+def compute_alignment_grid(sim_matrix, gap_penalty, mode="global"):
     """
     Fills the DP grid using Global Alignment (Needleman-Wunsch) logic.
     """
@@ -71,7 +74,13 @@ def compute_alignment_grid(sim_matrix, gap_penalty):
 
     # Initialize first row and column with cumulative gap penalties
     grid[:, 0] = np.arange(len_x + 1) * gap_penalty
-    grid[0, :] = np.arange(len_y + 1) * gap_penalty
+    
+    if mode == "global":
+        grid[0, :] = np.arange(len_y + 1) * gap_penalty
+    elif mode == "semiglobal":
+        grid[0, :] = 0.0
+    else:
+        raise ValueError(f"Unknown alignment mode: {mode}")
 
     # Fill DP Grid
     for i in range(1, len_x + 1):
@@ -92,6 +101,7 @@ def score_alignment(
     learner,
     reference,
     *,
+    mode="global",
     gap_penalty=-0.5, # Adjusted default: since scores are [-1, 1], -0.5 is a "soft" penalty
     dist_method=None,
     match_score=1.0,
@@ -116,17 +126,23 @@ def score_alignment(
         plt.close()
 
     # 2. Compute DP Grid
-    grid = compute_alignment_grid(sim_matrix, gap_penalty)
+    grid = compute_alignment_grid(sim_matrix, gap_penalty, mode=mode)
 
     if only_return_score:
-        raw_score = grid[-1, -1]
-        max_len = max(len(x), len(y))
+        if mode == "global":
+            raw_score = grid[-1, -1]
+            denom = max(len(x), len(y))
+        elif mode == "semiglobal":
+            raw_score = np.max(grid[-1, :])
+            denom = len(x)
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
         
-        if max_len == 0 or match_score <= 0:
+        if denom == 0 or match_score <= 0:
             return 0.0
 
         # Normalize to approx [-1, 1]
-        avg_score = raw_score / (max_len * match_score)
+        avg_score = raw_score / (denom * match_score)
         
         # Clamp to -1.0 (to handle cases where extensive gaps might push it lower)
         avg_score = np.maximum(avg_score, -1.0)
@@ -138,9 +154,15 @@ def score_alignment(
     x_penalties = np.zeros(len(x))
     alignment_path = []
 
-    i, j = len(x), len(y)
+    if mode == "global":
+        i, j = len(x), len(y)
+    elif mode == "semiglobal":
+        i = len(x)
+        j = np.argmax(grid[-1, :])
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
 
-    while i > 0 or j > 0:
+    while i > 0 or (mode == "global" and j > 0):
         current_score = grid[i, j]
         
         # Retrieve predecessor scores (safe against boundary checks)

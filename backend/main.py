@@ -219,6 +219,7 @@ def compare_endpoint(
     discretizer: Optional[str] = Form(None),
     dist_method: Optional[str] = Form(None),
     alignment_method: Optional[str] = Form(None),
+    alignment_mode: str = Form("global"),
     alpha: Optional[float] = Form(None),
 ):
     model, x, y = audio_data
@@ -234,7 +235,7 @@ def compare_endpoint(
     if discretizer is not None:
         xtokens = model.discretize(x, discretizer)
         ytokens = model.discretize(y, discretizer)
-        scores, path = score_alignment(ytokens, xtokens)
+        scores, path = score_alignment(ytokens, xtokens, mode=alignment_mode, gap_penalty=-0.1)
         alignment_map = build_alignments(path, len(ytokens), len(xtokens))
 
         aligned_times = []
@@ -259,7 +260,7 @@ def compare_endpoint(
             use_segmental = not model.has_fixed_frame_rate
 
         if use_segmental:
-            scores, path = score_alignment(y_feats, x_feats, alpha=alpha, dist_method=dist_method, tmpdir=tmpdir)
+            scores, path = score_alignment(y_feats, x_feats, alpha=alpha, dist_method=dist_method, tmpdir=tmpdir, gap_penalty=-0.05, mode=alignment_mode)
             alignment_map = build_alignments(path, len(y_feats), len(x_feats))
 
             aligned_times = []
@@ -268,15 +269,26 @@ def compare_endpoint(
                     aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
                     aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
         else:
-            alignment = dtw.dtw(x_feats, y_feats, dist_method=dist_method, keep_internals=True)
+            # Use semiglobal_norm_query configuration: dtw(query, template, ...)
+            # y is query (learner), x is template (model)
+            alignment = dtw.dtw(
+                y_feats,
+                x_feats,
+                dist_method=dist_method,
+                keep_internals=True,
+                open_begin=True,
+                open_end=True,
+                step_pattern="asymmetric",
+            )
             alignment_map = dtw.warp(alignment, index_reference=False)
 
             y_scores_sum = np.zeros(len(y_feats))
             y_scores_count = np.zeros(len(y_feats))
 
+            # index1 is y (learner), index2 is x (template)
             for i, j in zip(alignment.index1, alignment.index2):
-                y_scores_sum[j] += alignment.localCostMatrix[i, j]
-                y_scores_count[j] += 1
+                y_scores_sum[i] += alignment.localCostMatrix[i, j]
+                y_scores_count[i] += 1
 
             y_avg_costs = np.divide(
                 y_scores_sum,
@@ -292,8 +304,8 @@ def compare_endpoint(
 
             aligned_times = []
             for i, j in zip(alignment.index1, alignment.index2):
-                aligned_times.append([y_segments[j][0], x_segments[i][0]])
-                aligned_times.append([y_segments[j][1], x_segments[i][1]])
+                aligned_times.append([y_segments[i][0], x_segments[j][0]])
+                aligned_times.append([y_segments[i][1], x_segments[j][1]])
 
     return {
         "scores": scores.tolist(),
@@ -310,6 +322,7 @@ def compare_dpdp_endpoint(
     audio_data: tuple = Depends(encoded_audio_for_comparison),
     gamma: float = Form(...),
     discretizer: str = Form(...),
+    alignment_mode: str = Form("global"),
 ):
     from speech_playground.tokenizer.dpdp import DPDPTokenizer
 
@@ -319,12 +332,12 @@ def compare_dpdp_endpoint(
     y = model.to_continuous_features(y)
 
     cluster_centers = model.cluster_centers(discretizer)
-    tokenizer = DPDPTokenizer(cluster_centers=cluster_centers)
+    tokenizer = DPDPTokenizer(cluster_centers=cluster_centers, gamma=gamma)
 
-    xcodes, xboundaries = tokenizer.tokenize_one(x, gamma=gamma)
-    ycodes, yboundaries = tokenizer.tokenize_one(y, gamma=gamma)
+    xcodes, xboundaries = tokenizer.tokenize_one(x)
+    ycodes, yboundaries = tokenizer.tokenize_one(y)
 
-    y_mismatches, path = score_alignment(ycodes, xcodes)
+    y_mismatches, path = score_alignment(ycodes, xcodes, mode=alignment_mode, gap_penalty=-0.5)
     alignment_map = build_alignments(path, len(ycodes), len(xcodes))
 
     # Convert boundaries to seconds
