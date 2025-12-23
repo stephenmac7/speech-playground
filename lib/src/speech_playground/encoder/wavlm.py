@@ -1,5 +1,9 @@
 from typing import Optional
+
 import torch
+import torchaudio
+from torchaudio.functional import resample
+
 from transformers import Wav2Vec2FeatureExtractor, WavLMModel
 
 class WavLMEncoder:
@@ -10,6 +14,12 @@ class WavLMEncoder:
         self.model.to(self.device)
         self.model.eval()
 
+    def load_audio(self, filepath: str) -> torch.Tensor:
+        wav, sr = torchaudio.load_with_torchcodec(filepath)
+        wav = resample(wav, sr, self.sample_rate)
+        return wav.squeeze(0).to(self.device)
+
+    @torch.inference_mode()
     def encode(self, waveforms: torch.Tensor) -> torch.Tensor:
         # waveforms: (batch, samples)
         assert waveforms.ndim == 2, "Input waveforms must be 2D (batch, samples)"

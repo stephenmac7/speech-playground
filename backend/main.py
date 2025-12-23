@@ -17,7 +17,6 @@ import soundfile
 import tempfile
 import torch
 import torchaudio
-import time
 
 import dtw
 

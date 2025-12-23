@@ -14,35 +14,33 @@ PARENT_DIR = Path(__file__).parent
 
 KANADE_MODELS_PATH = Path(os.getenv("KANADE_MODELS_PATH"))
 if KANADE_MODELS_PATH is None:
-    raise ValueError("KANADE_MODELS_PATH environment variable must be set. Copy backend/.env.example to backend/.env.")
+    raise ValueError(
+        "KANADE_MODELS_PATH environment variable must be set. Copy backend/.env.example to backend/.env."
+    )
 if not KANADE_MODELS_PATH.is_absolute():
     KANADE_MODELS_PATH = PARENT_DIR / KANADE_MODELS_PATH
 with open(KANADE_MODELS_PATH, "r") as f:
     KANADE_MODELS = json.load(f)
 KANADE_VARIANTS = {model["variant"]: model for model in KANADE_MODELS}
 
+
 class ModelMetadata(ABC):
     @property
     @abstractmethod
-    def slug(self) -> str:
-        ...
+    def slug(self) -> str: ...
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
-    def load(self):
-        ...
+    def load(self): ...
 
     @abstractmethod
-    def discretizers(self):
-        ...
+    def discretizers(self): ...
 
     @abstractmethod
-    def encode(self, waveform: torch.Tensor):
-        ...
+    def encode(self, waveform: torch.Tensor): ...
 
     def to_continuous_features(self, encoded):
         return encoded
@@ -79,25 +77,33 @@ class ModelMetadata(ABC):
     def get_segments(self, encoded):
         fd = self.frame_duration
         if fd is None:
-            raise NotImplementedError("This model does not have a fixed frame rate. Please override get_segments().")
+            raise NotImplementedError(
+                "This model does not have a fixed frame rate. Please override get_segments()."
+            )
         features = self.to_continuous_features(encoded)
         length = len(features)
         return [[i * fd, (i + 1) * fd] for i in range(length)]
 
+
 HUBERT_KMEANS_PATH = os.getenv("HUBERT_KMEANS_PATH")
+WAVLM_BASE_PLUS_KMEANS_PATH = os.getenv("WAVLM_BASE_PLUS_KMEANS_PATH")
+
 
 @lru_cache()
 def load_kmeans(path):
     import joblib
 
-    print("Loading KMeans model for HuBERT from", path)
     kmeans_path = Path(path)
     if not kmeans_path.is_absolute():
         kmeans_path = PARENT_DIR / kmeans_path
 
     return joblib.load(kmeans_path)
 
-DEFAULT_KMEANS_URL = "https://github.com/bshall/dusted/releases/download/v0.1/kmeans-english-50f36a.pt"
+
+DEFAULT_KMEANS_URL = (
+    "https://github.com/bshall/dusted/releases/download/v0.1/kmeans-english-50f36a.pt"
+)
+
 
 @lru_cache()
 def load_kmeans_default():
@@ -108,15 +114,19 @@ def load_kmeans_default():
     model.__dict__["cluster_centers_"] = checkpoint["cluster_centers_"].numpy()
     return model
 
+
 class HubertMetadata(ModelMetadata):
     slug = "hubert_l7"
     name = "HuBERT L7"
+
+    def __init__(self, *, device: Optional[torch.device] = "cuda"):
+        self.device = device
 
     @lru_cache()
     def load(self):
         from speech_playground.encoder.hubert import HubertEncoder
 
-        return HubertEncoder()
+        return HubertEncoder(device=self.device)
 
     def load_kmeans(self, name: str):
         if HUBERT_KMEANS_PATH is None:
@@ -125,7 +135,7 @@ class HubertMetadata(ModelMetadata):
 
     def cluster_centers(self, name: str):
         return self.load_kmeans(name).cluster_centers_
-    
+
     @lru_cache()
     def discretizers(self):
         if HUBERT_KMEANS_PATH is None:
@@ -137,14 +147,16 @@ class HubertMetadata(ModelMetadata):
 
     def discretize(self, features: np.ndarray, discretizer_name: str):
         from speech_playground.tokenizer.kmeans import KMeansTokenizer
+
         return KMeansTokenizer(self.load_kmeans(discretizer_name)).tokenize_one(features)
 
     @property
     def euclidean_alpha(self):
         return 0.02
 
+
 class WavLMMetadata(ModelMetadata):
-    slug = "wavlm_base_plus"
+    slug = "wavlm-base-plus"
     name = "WavLM Base Plus"
 
     @lru_cache()
@@ -153,11 +165,26 @@ class WavLMMetadata(ModelMetadata):
 
         return WavLMEncoder()
 
+    def load_kmeans(self, name: str):
+        return load_kmeans(Path(WAVLM_BASE_PLUS_KMEANS_PATH) / f"{name}.joblib")
+
+    def cluster_centers(self, name: str):
+        return self.load_kmeans(name).cluster_centers_
+
+    @lru_cache()
     def discretizers(self):
-        return []
+        if WAVLM_BASE_PLUS_KMEANS_PATH is None:
+            return []
+        return sorted([p.stem for p in Path(WAVLM_BASE_PLUS_KMEANS_PATH).glob("*.joblib")])
 
     def encode(self, waveform: torch.Tensor):
         return self.load().encode_one(waveform).cpu().numpy()
+
+    def discretize(self, features: np.ndarray, discretizer_name: str):
+        from speech_playground.tokenizer.kmeans import KMeansTokenizer
+
+        return KMeansTokenizer(self.load_kmeans(discretizer_name)).tokenize_one(features)
+
 
 @lru_cache()
 def get_kanade(variant: str):
@@ -191,7 +218,7 @@ class KanadeMetadata(ModelMetadata):
         return get_kanade(self.variant).codebook
 
     def discretizers(self):
-        return [ "DEFAULT" ]
+        return ["DEFAULT"]
 
     def encode(self, waveform: torch.Tensor):
         return self.load().encode_one(waveform)
@@ -221,11 +248,16 @@ else:
         )
     )
     INVERSION_MU_PATH = Path(
-        os.getenv("INVERSION_MU_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy"))
+        os.getenv(
+            "INVERSION_MU_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_mean_EMA.npy")
+        )
     )
     INVERSION_STD_PATH = Path(
-        os.getenv("INVERSION_STD_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy"))
+        os.getenv(
+            "INVERSION_STD_PATH", str(INVERSION_TOP / "normalising_vectors/JW13_std_EMA.npy")
+        )
     )
+
 
 class InversionMetadata(ModelMetadata):
     slug = "inversion"
@@ -249,18 +281,17 @@ class InversionMetadata(ModelMetadata):
         model = self.load()
         x_norm = x[:, :12] * model.std + model.mu
         y_norm = y[:, :12] * model.std + model.mu
-        return {
-            "articulatoryFeatures": [x_norm.tolist(), y_norm.tolist()]
-        }
+        return {"articulatoryFeatures": [x_norm.tolist(), y_norm.tolist()]}
 
     @property
     def euclidean_alpha(self):
         """Alpha parameter for converting distances to scores."""
         return 0.7
-    
+
     @property
     def default_dist_method(self):
         return "euclidean"
+
 
 class SylberMetadata(ModelMetadata):
     def discretizers(self):
@@ -275,6 +306,7 @@ class SylberMetadata(ModelMetadata):
 
     def get_segments(self, encoded):
         return encoded["segments"].tolist()
+
 
 class SylberV1Metadata(SylberMetadata):
     def __init__(self):
@@ -291,6 +323,7 @@ class SylberV1Metadata(SylberMetadata):
     @lru_cache()
     def load(self):
         from speech_playground.encoder.sylber import SylberEncoder
+
         return SylberEncoder()
 
     def encode(self, waveform: torch.Tensor):
@@ -319,6 +352,7 @@ class SylberV2Metadata(SylberMetadata):
     @lru_cache()
     def load(self):
         from speech_playground.encoder.sylber2 import Sylber2ContentEncoder
+
         return Sylber2ContentEncoder(checkpoint_path=self.checkpoint_path)
 
     def encode(self, waveform: torch.Tensor):
@@ -334,7 +368,6 @@ class SylberV2Metadata(SylberMetadata):
 
     def to_continuous_features(self, encoded):
         return encoded["segment_features"].cpu().numpy()
-
 
 
 class SyllableLMMetadata(ModelMetadata):
@@ -435,11 +468,13 @@ else:
 
 try:
     from models_local import EXTRA_MODELS
+
     MODELS.extend(EXTRA_MODELS)
 except ImportError:
     pass
 
 MODELS_MAP = {model.slug: model for model in MODELS}
+
 
 @lru_cache()
 def get_kanade_vocoder(variant: str):

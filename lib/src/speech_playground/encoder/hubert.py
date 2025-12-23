@@ -16,7 +16,7 @@ class HubertEncoder:
 
     def load_audio(self, filepath: str) -> torch.Tensor:
         wav, sr = torchaudio.load_with_torchcodec(filepath)
-        wav = resample(wav, sr, 16000)
+        wav = resample(wav, sr, self.sample_rate)
         return wav.squeeze(0).to(self.device)
 
     def encode_one(self, waveform: torch.Tensor) -> torch.Tensor:

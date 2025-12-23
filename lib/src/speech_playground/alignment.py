@@ -98,6 +98,7 @@ def score_alignment(
     mismatch_score=-1.0,
     alpha=None,
     tmpdir=None,
+    only_return_score=False,
 ):
     x, y = learner, reference
 
@@ -116,6 +117,22 @@ def score_alignment(
 
     # 2. Compute DP Grid
     grid = compute_alignment_grid(sim_matrix, gap_penalty)
+
+    if only_return_score:
+        raw_score = grid[-1, -1]
+        max_len = max(len(x), len(y))
+        
+        if max_len == 0 or match_score <= 0:
+            return 0.0
+
+        # Normalize to approx [-1, 1]
+        avg_score = raw_score / (max_len * match_score)
+        
+        # Clamp to -1.0 (to handle cases where extensive gaps might push it lower)
+        avg_score = np.maximum(avg_score, -1.0)
+        
+        # Map [-1, 1] -> [0, 1] for final output
+        return (avg_score + 1.0) / 2.0
 
     # 3. Backtrack with explicit tie-breaking
     x_penalties = np.zeros(len(x))

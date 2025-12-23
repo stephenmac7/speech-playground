@@ -10,7 +10,7 @@ def get_encoder(args):
         from speech_playground.encoder.hubert import HubertEncoder
 
         return HubertEncoder(language=args.language, layer=args.layer)
-    elif args.encoder.startswith("wavlm"):
+    elif args.encoder in ["wavlm-l69", "wavlm-l69-reconstruction"]:
         from speech_playground.encoder.kanade import KanadeWavLMEncoder
 
         output_key = "ssl_real" if args.encoder == "wavlm-l69" else "ssl_recon"
@@ -19,6 +19,20 @@ def get_encoder(args):
             weights_path="/home/smcintosh/kanade-tokenizer/weights/25hz_with_feature_decoder.safetensors",
             return_only=output_key,
         )
+    else:
+        # try to load from models_config -- add to python path from parent directory
+        import sys
+        import dotenv
+        from pathlib import Path
+
+
+        backend_path = Path(__file__).resolve().parent.parent / "backend"
+        dotenv.load_dotenv(dotenv_path=backend_path / ".env")
+        sys.path.append(str(backend_path))
+        import models_config
+        for model_meta in models_config.MODELS:
+            if model_meta.slug == args.encoder:
+                return model_meta.load()
     raise ValueError(f"Unknown encoder: {args.encoder}")
 
 
@@ -61,7 +75,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--encoder",
-        choices=["hubert", "wavlm-l69", "wavlm-l69-reconstruction"],
+        type=str,
         help="name of the encoder to use (default to hubert).",
         default="hubert",
     )
@@ -85,8 +99,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    if args.encoder.startswith("wavlm"):
-        assert args.language == "english", "Only English is supported for WavLM encoders."
+    if args.encoder != "hubert":
+        assert args.language == "english", "Language argument is only supported for HuBERT encoder."
         assert (
             args.layer == 7
         ), "Layer argument is ignored for WavLM encoders. Uses average of layers 6 and 9."
