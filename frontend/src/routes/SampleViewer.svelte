@@ -174,6 +174,7 @@
 			const otherEnd = mapTime(end);
 			if (otherStart !== undefined && otherEnd !== undefined) {
 				// wavesurfer.play handles start > end by playing from min(start, end) to max(start, end)
+				console.log("Playing other viewer from", otherStart, "to", otherEnd);
 				compareWith.other.play(otherStart, otherEnd);
 			}
 		} else {

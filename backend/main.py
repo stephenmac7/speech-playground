@@ -235,7 +235,7 @@ def compare_endpoint(
     if discretizer is not None:
         xtokens = model.discretize(x, discretizer)
         ytokens = model.discretize(y, discretizer)
-        scores, path = score_alignment(ytokens, xtokens, mode=alignment_mode, gap_penalty=-0.1)
+        scores, path = score_alignment(ytokens, xtokens, mode=alignment_mode, gap_penalty=-0.5)
         alignment_map = build_alignments(path, len(ytokens), len(xtokens))
 
         aligned_times = []
@@ -280,7 +280,10 @@ def compare_endpoint(
                 open_end=True,
                 step_pattern="asymmetric",
             )
-            alignment_map = dtw.warp(alignment, index_reference=False)
+            alignment_map = dtw.warp(alignment, index_reference=True)
+            # dtw.warp returns garbage (large negative integers) when there are gaps.
+            # We replace them with -1.
+            alignment_map[alignment_map < 0] = -1
 
             y_scores_sum = np.zeros(len(y_feats))
             y_scores_count = np.zeros(len(y_feats))

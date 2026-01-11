@@ -12,9 +12,45 @@ export function buildContinuousRegions(
 	allScores: number[],
 	segments: number[][],
 	trigger: number,
-	min: number
+	min: number,
+	combineRegions: boolean = true,
+	alignmentMap?: number[],
+	modelIndexMap?: number[],
+	showScore: boolean = false
 ): Region[] {
 	if (allScores.length === 0) return [];
+
+	if (!combineRegions) {
+		return allScores.map((score, i) => {
+			const isInsertion = alignmentMap && alignmentMap[i] === -1;
+			let opacity = 0;
+			if (score < trigger) {
+				opacity = 0.8 * ((trigger - score) / trigger);
+			}
+
+			let content = '';
+			if (showScore) {
+				content = score.toFixed(2);
+			} else if (alignmentMap) {
+				const modelIndex = alignmentMap[i];
+				if (modelIndex !== -1 && modelIndex !== undefined) {
+					if (modelIndexMap) {
+						content = String(modelIndexMap[modelIndex]);
+					} else {
+						content = String(modelIndex);
+					}
+				}
+			}
+
+			return {
+				id: 'segment-' + i,
+				start: segments[i][0],
+				end: segments[i][1],
+				color: isInsertion ? `rgba(255, 255, 0, 0.5)` : `rgba(255, 0, 0, ${opacity})`,
+				content
+			};
+		});
+	}
 
 	const regions: Region[] = [];
 	let current: { start: number; scores: number[] } | undefined;
@@ -27,6 +63,18 @@ export function buildContinuousRegions(
 
 		const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
 
+		let isPureInsertion = true;
+		if (alignmentMap) {
+			for (let k = startFrame; k < endFrame; k++) {
+				if (alignmentMap[k] !== -1) {
+					isPureInsertion = false;
+					break;
+				}
+			}
+		} else {
+			isPureInsertion = false;
+		}
+
 		// Calculate shade:
 		// (min - avg) is the "badness" amount.
 		// Divide by min to normalize it (0 -> 1 range, where 1 is worst (avg=0))
@@ -35,21 +83,41 @@ export function buildContinuousRegions(
 		const shade = ((min - avg) / min) * 2.0;
 		const opacity = Math.max(0, Math.min(1, shade)) * 0.8;
 
+		let content = '';
+		if (showScore) {
+			content = avg.toFixed(2);
+		} else if (alignmentMap) {
+			const indices: number[] = [];
+			for (let k = startFrame; k < endFrame; k++) {
+				const idx = alignmentMap[k];
+				if (idx !== -1 && idx !== undefined) indices.push(idx);
+			}
+			if (indices.length > 0) {
+				const mapped = modelIndexMap ? indices.map((i) => modelIndexMap[i]) : indices;
+				const minIdx = Math.min(...mapped);
+				const maxIdx = Math.max(...mapped);
+				content = minIdx === maxIdx ? String(minIdx) : `${minIdx}-${maxIdx}`;
+			}
+		} else {
+			content = avg.toFixed(2);
+		}
+
 		regions.push({
 			id: `region-${startFrame}-${endFrame}`,
 			start: startTime,
 			end: endTime,
-			color: `rgba(255, 0, 0, ${opacity})`,
-			content: String(avg.toFixed(2))
+			color: isPureInsertion ? `rgba(255, 255, 0, 0.5)` : `rgba(255, 0, 0, ${opacity})`,
+			content
 		});
 	};
 
 	allScores.forEach((score, i) => {
-		if (score < trigger) {
+		const isInsertion = alignmentMap && alignmentMap[i] === -1;
+		if (score < trigger || isInsertion) {
 			if (!current) {
 				// Start of a new region, backtrack to find the real start
 				let j = i - 1;
-				while (j >= 0 && allScores[j] < trigger) {
+				while (j >= 0 && (allScores[j] < trigger || (alignmentMap && alignmentMap[j] === -1))) {
 					j--;
 				}
 				// The last "good" frame was j, so the "bad" region started at j + 1
@@ -79,7 +147,8 @@ function buildIndividualSegmentRegions(
 	scores: number[],
 	segments: number[][],
 	alignmentMap?: number[],
-	modelIndexMap?: number[]
+	modelIndexMap?: number[],
+	showScore: boolean = false
 ): Region[] {
 	const regions: Region[] = [];
 	scores.forEach((score, i) => {
@@ -90,7 +159,9 @@ function buildIndividualSegmentRegions(
 			const endFrame = i + 1; // Always 1 frame long
 
 			let content = '';
-			if (!isInsertion && alignmentMap) {
+			if (showScore) {
+				content = score.toFixed(2);
+			} else if (!isInsertion && alignmentMap) {
 				const originalIndex = alignmentMap[i];
 				if (modelIndexMap && originalIndex !== -1) {
 					content = String(modelIndexMap[originalIndex]);
@@ -116,12 +187,13 @@ export function buildSegmentRegions(
 	segments: number[][], // size N
 	combineRegions: boolean = false,
 	alignmentMap?: number[],
-	modelIndexMap?: number[]
+	modelIndexMap?: number[],
+	showScore: boolean = false
 ): Region[] {
 	const regions: Region[] = [];
 
 	if (!combineRegions) {
-		return buildIndividualSegmentRegions(scores, segments, alignmentMap, modelIndexMap);
+		return buildIndividualSegmentRegions(scores, segments, alignmentMap, modelIndexMap, showScore);
 	}
 
 	let currentBadRegionStart: number | undefined;
@@ -129,7 +201,7 @@ export function buildSegmentRegions(
 	let consecutiveGoodFrames = 0; // Number of good frames encountered since the last bad frame
 
 	const processRegion = (startFrame: number, endFrame: number, regionScores: number[]) => {
-        if (regionScores.length === 0) return; // Should not happen with this logic, but as a safeguard
+		if (regionScores.length === 0) return; // Should not happen with this logic, but as a safeguard
 
 		const avg = regionScores.reduce((a, b) => a + b, 0) / regionScores.length;
 
@@ -157,7 +229,9 @@ export function buildSegmentRegions(
 		}
 
 		let content = '';
-		if (!isPureInsertion && validIndices.length > 0) {
+		if (showScore) {
+			content = avg.toFixed(2);
+		} else if (!isPureInsertion && validIndices.length > 0) {
 			let mappedIndices = validIndices;
 			if (modelIndexMap) {
 				mappedIndices = validIndices.map((idx) => modelIndexMap[idx]);

@@ -16,3 +16,5 @@ wheels/
 # Different packages for different machines
 uv.lock
 
+# LLM instructions
+GEMINI.md

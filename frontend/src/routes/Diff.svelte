@@ -87,6 +87,7 @@
 	let alignment_method = $state('default');
 	let customAlpha = $state(false);
 	let alpha = $state(1.0);
+	let showScore = $state(false);
 
 	let loading = $state(false);
 
@@ -148,39 +149,21 @@
 					learnerSegments,
 					combineRegions,
 					alignmentMap,
-					modelIndexMap
+					modelIndexMap,
+					showScore
 				);
 			}
 
-			if (alignmentMap && isSegmentalAlignment) {
-				// Variable rate / segments mode (e.g. Sylber)
-				return learnerSegments.map((segment, i) => {
-					const score = scores[i];
-					let opacity = 0;
-					if (score < trigger) {
-						opacity = 0.8 * ((trigger - score) / trigger);
-					}
-					const modelIndex = alignmentMap![i];
-					if (modelIndex === -1 || modelIndex === undefined) {
-						return {
-							id: 'segment-' + i,
-							start: segment[0],
-							end: segment[1],
-							color: `rgba(255, 255, 0, 0.5)`,
-							content: ''
-						};
-					}
-					return {
-						id: 'segment-' + i,
-						start: segment[0],
-						end: segment[1],
-						color: `rgba(255, 0, 0, ${opacity})`,
-						content: modelIndex.toString()
-					};
-				});
-			} else {
-				return buildContinuousRegions(scores, learnerSegments, trigger, trigger - 0.05);
-			}
+			return buildContinuousRegions(
+				scores,
+				learnerSegments,
+				trigger,
+				trigger - 0.05,
+				combineRegions,
+				alignmentMap,
+				modelIndexMap,
+				showScore
+			);
 		}
 		return [] as Region[];
 	});
@@ -460,6 +443,10 @@
 						<input type="checkbox" bind:checked={combineRegions} />
 					</label>
 					<label>
+						Show Score:
+						<input type="checkbox" bind:checked={showScore} />
+					</label>
+					<label>
 						Alignment Mode:
 						<select bind:value={alignment_mode}>
 							<option value="global">Global</option>
@@ -487,7 +474,14 @@
 						<input type="checkbox" bind:checked={dpdp} disabled={!supportsDpdp} />
 					</label>
 					<label class:disabled={!dpdp}>
-						Gamma: {gamma}
+						Gamma: <input
+							type="number"
+							bind:value={gamma}
+							min="0.0"
+							max="1.0"
+							step="0.1"
+							class="short-input"
+						/>
 						<input
 							type="range"
 							min="0.0"
@@ -521,6 +515,14 @@
 							<option value="dtw">DTW</option>
 							<option value="segmental">Segmental</option>
 						</select>
+					</label>
+					<label>
+						Combine Regions:
+						<input type="checkbox" bind:checked={combineRegions} />
+					</label>
+					<label>
+						Show Score:
+						<input type="checkbox" bind:checked={showScore} />
 					</label>
 					{#if isSegmentalAlignment}
 						<label>
@@ -655,5 +657,9 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5em;
+	}
+
+	.short-input {
+		width: 4em;
 	}
 </style>

@@ -125,6 +125,18 @@
 			e.stopPropagation();
 		}
 	}
+
+	function downloadTrack(blob: Blob | undefined | null, filename: string) {
+		if (!blob) return;
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	}
 </script>
 
 <h3>Library</h3>
@@ -163,22 +175,49 @@
 					{/each}
 				</div>
 			{/if}
-			<button class="delete-track" onclick={() => deleteTrack(track.id)} title="Delete track">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="24"
-					height="24"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
+			<div class="track-actions">
+				<button
+					class="track-action-button"
+					onclick={() => downloadTrack(track.data, `track-${track.id}.wav`)}
+					title="Download track"
 				>
-					<line x1="18" y1="6" x2="6" y2="18"></line>
-					<line x1="6" y1="6" x2="18" y2="18"></line>
-				</svg>
-			</button>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="24"
+						height="24"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+						<polyline points="7 10 12 15 17 10"></polyline>
+						<line x1="12" y1="15" x2="12" y2="3"></line>
+					</svg>
+				</button>
+				<button
+					class="track-action-button"
+					onclick={() => deleteTrack(track.id)}
+					title="Delete track"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="24"
+						height="24"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<line x1="18" y1="6" x2="6" y2="18"></line>
+						<line x1="6" y1="6" x2="18" y2="18"></line>
+					</svg>
+				</button>
+			</div>
 			<SampleViewer audio={track.data} zoom={false} layout="compact" clickToPlay={true} />
 			<AudioSelector
 				{recorder}
@@ -279,10 +318,14 @@
 	.add-track:hover {
 		background-color: var(--background-color);
 	}
-	.delete-track {
+	.track-actions {
 		position: absolute;
 		top: -0.6em;
 		right: -0.6em;
+		display: flex;
+		gap: 0.2em;
+	}
+	.track-action-button {
 		background: var(--surface-color);
 		border: 1px solid var(--border-color);
 		border-radius: 50%;
@@ -294,10 +337,10 @@
 		align-items: center;
 		justify-content: center;
 	}
-	.delete-track:hover {
-		opacity: 1;
+	.track-action-button:hover {
+		background-color: var(--background-color);
 	}
-	.delete-track:disabled {
+	.track-action-button:disabled {
 		display: none;
 	}
 </style>
