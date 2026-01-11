@@ -72,6 +72,7 @@ class ModelMetadata(ABC):
 
     @property
     def has_fixed_frame_rate(self) -> bool:
+        print(f"{self.__class__.__name__}: has_fixed_frame_rate is not implemented; using frame_duration which may be slow.")
         return self.frame_duration is not None
 
     def get_segments(self, encoded):
@@ -151,6 +152,10 @@ class HubertMetadata(ModelMetadata):
         return KMeansTokenizer(self.load_kmeans(discretizer_name)).tokenize_one(features)
 
     @property
+    def has_fixed_frame_rate(self) -> bool:
+        return True
+
+    @property
     def euclidean_alpha(self):
         return 0.02
 
@@ -188,6 +193,10 @@ class WavLMMetadata(ModelMetadata):
         from speech_playground.tokenizer.kmeans import KMeansTokenizer
 
         return KMeansTokenizer(self.load_kmeans(discretizer_name)).tokenize_one(features)
+
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return True
 
     @property
     def cosine_alpha(self):
@@ -301,6 +310,10 @@ class InversionMetadata(ModelMetadata):
         return {"articulatoryFeatures": [x_norm.tolist(), y_norm.tolist()]}
 
     @property
+    def has_fixed_frame_rate(self) -> bool:
+        return True
+
+    @property
     def euclidean_alpha(self):
         """Alpha parameter for converting distances to scores."""
         # need high gap penalty -- about -0.5
@@ -324,6 +337,10 @@ class SylberMetadata(ModelMetadata):
 
     def get_segments(self, encoded):
         return encoded["segments"].tolist()
+
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return False
 
 
 class SylberV1Metadata(SylberMetadata):
@@ -436,6 +453,10 @@ class SyllableLMMetadata(ModelMetadata):
     @property
     def frame_duration(self) -> Optional[float]:
         return None
+
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return False
 
     def get_segments(self, encoded):
         return encoded["segments"].tolist()
