@@ -455,8 +455,8 @@ if sylber2_checkpoint_path is not None:
     SYLBER_MODELS.append(SylberV2Metadata(checkpoint_path=sylber2_checkpoint_path))
 
 MODELS = [
-    HubertMetadata(),
     WavLMMetadata(),
+    HubertMetadata(),
     *SYLBER_MODELS,
     *(KanadeMetadata(variant=model["variant"], name=model["name"]) for model in KANADE_MODELS),
 ]

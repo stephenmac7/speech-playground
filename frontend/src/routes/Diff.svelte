@@ -61,10 +61,10 @@
 	let vcModelOptions = $state<VoiceModelOption[]>([]);
 
 	// Fixed-rate diff
-	let encoder = $state('hubert_l7');
+	let encoder = $state('wavlm-base-plus');
 	let discretize = $state(false);
 	let discretizer = $state('bshall');
-	let combineRegions = $state(true);
+	let combineRegions = $state(false);
 	let dpdp = $state(true);
 	let gamma = $state('0.2');
 	let alignment_mode = $state('global');
@@ -408,8 +408,8 @@
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					{:else}
-						<!-- Fallback: HuBERT only until list loads -->
-						<option value="hubert_l7">HuBERT L7</option>
+						<!-- Fallback: WavLM Base Plus only until list loads -->
+						<option value="wavlm-base-plus">WavLM Base Plus</option>
 					{/if}
 				</select>
 			</label>
