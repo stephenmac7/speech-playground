@@ -17,11 +17,10 @@ import soundfile
 import tempfile
 import torch
 import torchaudio
+import torchaudio.functional as F
+from torchcodec.decoders import AudioDecoder
 
 import dtw
-
-import torchaudio
-import torchaudio.functional as F
 
 from speech_playground.alignment import score_alignment, build_alignments
 
@@ -128,13 +127,15 @@ def vad(wav, *args, **kwargs):
 
 def streaming_response_of_audio(waveform: torch.Tensor, sample_rate: int) -> StreamingResponse:
     buffer = io.BytesIO()
-    soundfile.write(buffer, waveform.squeeze().cpu().numpy(), sample_rate, format="wav")
+    soundfile.write(buffer, waveform.cpu().numpy().T, sample_rate, format="wav")
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="audio/wav")
 
 
 def streaming_response_of_audio_file(file, *, apply_vad: bool, debug_save_filename: str = None):
-    ywav, sr = torchaudio.load_with_torchcodec(file)
+    source = file.read() if hasattr(file, "read") else file
+    samples = AudioDecoder(source).get_all_samples()
+    ywav, sr = samples.data.mean(dim=0, keepdim=True), samples.sample_rate
 
     if apply_vad:
         ywav = vad(ywav, sr)
@@ -181,10 +182,9 @@ def encoded_audio_for_comparison(
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
 
-    xwav, xsr = torchaudio.load_with_torchcodec(model_file.file)
-    xwav = model.resample(xwav.squeeze(0), xsr)
-    ywav, ysr = torchaudio.load_with_torchcodec(file.file)
-    ywav = model.resample(ywav.squeeze(0), ysr)
+    target_sr = model.load().sample_rate
+    xwav = AudioDecoder(model_file.file.read(), sample_rate=target_sr).get_all_samples().data.mean(dim=0)
+    ywav = AudioDecoder(file.file.read(), sample_rate=target_sr).get_all_samples().data.mean(dim=0)
 
     x = model.encode(xwav)
     y = model.encode(ywav)
@@ -194,16 +194,13 @@ def encoded_audio_for_comparison(
 
 @app.post("/ifmdd")
 def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
-    ywav, sr = torchaudio.load_with_torchcodec(file.file)
-    if sr != 16000:
-        ywav = F.resample(ywav, sr, 16000)
-    assert ywav.shape[0] == 1, "Only mono audio is supported."
+    ywav = AudioDecoder(file.file.read(), sample_rate=16000).get_all_samples().data.mean(dim=0)
 
-    predicted_tokens, sample_indices = get_ifmdd().transcribe_aligned(ywav.squeeze(0))
+    predicted_tokens, sample_indices = get_ifmdd().transcribe_aligned(ywav)
     timestamps = (sample_indices / 16000.0).tolist()
 
     # timestamps are [start_1, start_2, ..., start_n] but we want [(start_1, start_2), (start_2, start_3), ..., (start_n-1, end)]
-    intervals = zip(timestamps, timestamps[1:] + [ywav.shape[1] / 16000.0])
+    intervals = zip(timestamps, timestamps[1:] + [ywav.shape[0] / 16000.0])
 
     result = [
         {"start": start, "end": end, "content": token}
@@ -377,16 +374,12 @@ def convert_voice_endpoint(
     from kanade_tokenizer.util import vocode
 
     kanade = get_kanade(model)
-    source_wav, source_sr = torchaudio.load_with_torchcodec(source.file)
-    source_wav = source_wav.squeeze(0)
-    reference_wav, reference_sr = torchaudio.load_with_torchcodec(reference.file)
-    reference_wav = reference_wav.squeeze(0)
+    source_wav = AudioDecoder(source.file.read(), sample_rate=kanade.sample_rate).get_all_samples().data.mean(dim=0).to(kanade.device)
+    reference_wav = AudioDecoder(reference.file.read(), sample_rate=kanade.sample_rate).get_all_samples().data.mean(dim=0).to(kanade.device)
 
     mel_spectrogram = kanade.model.voice_conversion(
-        source_waveform=F.resample(source_wav, source_sr, kanade.sample_rate).to(kanade.device),
-        reference_waveform=F.resample(reference_wav, reference_sr, kanade.sample_rate).to(
-            kanade.device
-        ),
+        source_waveform=source_wav,
+        reference_waveform=reference_wav,
     )
     vocoder = get_kanade_vocoder(model)
     converted_waveform = vocode(vocoder, mel_spectrogram.unsqueeze(0))
@@ -402,9 +395,7 @@ def reconstruct_endpoint(
     from kanade_tokenizer.util import vocode
 
     kanade = get_kanade(model)
-    source_wav, source_sr = torchaudio.load_with_torchcodec(file.file)
-    source_wav = source_wav.squeeze(0)
-    source_wav_resampled = F.resample(source_wav, source_sr, kanade.sample_rate).to(kanade.device)
+    source_wav_resampled = AudioDecoder(file.file.read(), sample_rate=kanade.sample_rate).get_all_samples().data.mean(dim=0).to(kanade.device)
 
     features = kanade.encode_one(source_wav_resampled)
 

@@ -10,6 +10,10 @@ def get_encoder(args):
         from speech_playground.encoder.hubert import HubertEncoder
 
         return HubertEncoder(language=args.language, layer=args.layer)
+    elif args.encoder == "bshall-wavlm-large-l6":
+        from speech_playground.encoder.wavlm import WavLMLargeL6Encoder
+
+        return WavLMLargeL6Encoder()
     elif args.encoder in ["wavlm-l69", "wavlm-l69-reconstruction"]:
         from speech_playground.encoder.kanade import KanadeWavLMEncoder
 

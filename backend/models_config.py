@@ -165,14 +165,31 @@ class HubertMetadata(ModelMetadata):
 
 
 class WavLMMetadata(ModelMetadata):
-    slug = "wavlm-base-plus"
-    name = "WavLM Base Plus"
+    def __init__(
+        self,
+        slug: str = "wavlm-base-plus",
+        name: str = "WavLM Base Plus",
+        model_name: str = "microsoft/wavlm-base-plus-sv",
+        layer: Optional[int] = None,
+    ):
+        self._slug = slug
+        self._name = name
+        self.model_name = model_name
+        self.layer = layer
+
+    @property
+    def slug(self) -> str:
+        return self._slug
+
+    @property
+    def name(self) -> str:
+        return self._name
 
     @lru_cache()
     def load(self):
         from speech_playground.encoder.wavlm import WavLMEncoder
 
-        return WavLMEncoder()
+        return WavLMEncoder(model_name=self.model_name, layer=self.layer)
 
     def load_kmeans(self, name: str):
         return load_kmeans(Path(WAVLM_BASE_PLUS_KMEANS_PATH) / f"{name}.joblib")
