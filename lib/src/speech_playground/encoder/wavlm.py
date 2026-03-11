@@ -48,7 +48,7 @@ class WavLMEncoder:
 
     Args:
         model_name: HuggingFace model ID (default: "microsoft/wavlm-base-plus-sv")
-        layer: transformer layer to extract (0-indexed). None = last hidden state.
+        layer: transformer layer to extract (1-indexed). None = last hidden state.
     """
 
     def __init__(
@@ -87,8 +87,8 @@ class WavLMEncoder:
             output_hidden_states=(self.layer is not None),
         )
         if self.layer is not None:
-            # hidden_states[0] = embeddings, hidden_states[i+1] = layer i (0-indexed)
-            return outputs.hidden_states[self.layer + 1]
+            # hidden_states[0] = CNN embeddings, hidden_states[i] = transformer layer i (1-indexed)
+            return outputs.hidden_states[self.layer]
         return outputs.last_hidden_state
 
     def encode_one(self, waveform: torch.Tensor) -> torch.Tensor:

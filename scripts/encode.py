@@ -9,7 +9,7 @@ def get_encoder(args):
     if args.encoder == "hubert":
         from speech_playground.encoder.hubert import HubertEncoder
 
-        return HubertEncoder(language=args.language, layer=args.layer)
+        return HubertEncoder(layer=args.layer or 7)
     elif args.encoder == "bshall-wavlm-large-l6":
         from speech_playground.encoder.wavlm import WavLMLargeL6Encoder
 
@@ -29,14 +29,16 @@ def get_encoder(args):
         import dotenv
         from pathlib import Path
 
-
         backend_path = Path(__file__).resolve().parent.parent / "backend"
         dotenv.load_dotenv(dotenv_path=backend_path / ".env")
         sys.path.append(str(backend_path))
         import models_config
         for model_meta in models_config.MODELS:
             if model_meta.slug == args.encoder:
-                return model_meta.load()
+                kwargs = {}
+                if args.layer is not None:
+                    kwargs["layer"] = args.layer
+                return model_meta.load(**kwargs)
     raise ValueError(f"Unknown encoder: {args.encoder}")
 
 
@@ -84,16 +86,10 @@ if __name__ == "__main__":
         default="hubert",
     )
     parser.add_argument(
-        "--language",
-        choices=["english", "chinese", "french"],
-        help="pre-training language of the HuBERT content encoder.",
-        default="english",
-    )
-    parser.add_argument(
         "--layer",
-        help="HuBERT layer to extract features from (defaults to 7).",
+        help="layer to extract features from (encoder-specific, e.g. 7 for HuBERT).",
         type=int,
-        default=7,
+        default=None,
     )
     parser.add_argument(
         "--extension",
@@ -103,10 +99,4 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    if args.encoder != "hubert":
-        assert args.language == "english", "Language argument is only supported for HuBERT encoder."
-        assert (
-            args.layer == 7
-        ), "Layer argument is ignored for WavLM encoders. Uses average of layers 6 and 9."
-
     encode_dataset(args)

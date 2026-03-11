@@ -171,11 +171,18 @@ class WavLMMetadata(ModelMetadata):
         name: str = "WavLM Base Plus",
         model_name: str = "microsoft/wavlm-base-plus-sv",
         layer: Optional[int] = None,
+        transform_path: Optional[str] = None,
     ):
         self._slug = slug
         self._name = name
         self.model_name = model_name
         self.layer = layer
+        self._transform_weight = None
+        self._transform_bias = None
+        if transform_path is not None:
+            data = np.load(transform_path)
+            self._transform_weight = data["weight"]  # (out, in)
+            self._transform_bias = data["bias"]  # (out,)
 
     @property
     def slug(self) -> str:
@@ -185,11 +192,16 @@ class WavLMMetadata(ModelMetadata):
     def name(self) -> str:
         return self._name
 
+    def load(self, *, layer=None):
+        if layer is not None:
+            return self._load(layer)
+        return self._load(self.layer)
+
     @lru_cache()
-    def load(self):
+    def _load(self, layer):
         from speech_playground.encoder.wavlm import WavLMEncoder
 
-        return WavLMEncoder(model_name=self.model_name, layer=self.layer)
+        return WavLMEncoder(model_name=self.model_name, layer=layer)
 
     def load_kmeans(self, name: str):
         return load_kmeans(Path(WAVLM_BASE_PLUS_KMEANS_PATH) / f"{name}.joblib")
@@ -205,6 +217,14 @@ class WavLMMetadata(ModelMetadata):
 
     def encode(self, waveform: torch.Tensor):
         return self.load().encode_one(waveform).cpu().numpy()
+
+    def to_continuous_features(self, encoded):
+        if self._transform_weight is not None:
+            out = encoded @ self._transform_weight.T
+            if self._transform_bias is not None:
+                out = out + self._transform_bias
+            return out
+        return encoded
 
     def discretize(self, features: np.ndarray, discretizer_name: str):
         from speech_playground.tokenizer.kmeans import KMeansTokenizer
@@ -494,6 +514,11 @@ if sylber2_checkpoint_path is not None:
 
 MODELS = [
     WavLMMetadata(),
+    WavLMMetadata(
+        slug="wavlm-large",
+        name="WavLM Large",
+        model_name="microsoft/wavlm-large",
+    ),
     HubertMetadata(),
     *SYLBER_MODELS,
     *(KanadeMetadata(variant=model["variant"], name=model["name"]) for model in KANADE_MODELS),
