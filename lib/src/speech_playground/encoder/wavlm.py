@@ -47,13 +47,13 @@ class WavLMEncoder:
     """WavLM encoder using HuggingFace transformers.
 
     Args:
-        model_name: HuggingFace model ID (default: "microsoft/wavlm-base-plus-sv")
+        model_name: HuggingFace model ID (default: "microsoft/wavlm-base-plus")
         layer: transformer layer to extract (1-indexed). None = last hidden state.
     """
 
     def __init__(
         self,
-        model_name: str = "microsoft/wavlm-base-plus-sv",
+        model_name: str = "microsoft/wavlm-base-plus",
         layer: Optional[int] = None,
         device: Optional[torch.device] = "cuda",
     ):

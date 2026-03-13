@@ -169,7 +169,7 @@ class WavLMMetadata(ModelMetadata):
         self,
         slug: str = "wavlm-base-plus",
         name: str = "WavLM Base Plus",
-        model_name: str = "microsoft/wavlm-base-plus-sv",
+        model_name: str = "microsoft/wavlm-base-plus",
         layer: Optional[int] = None,
         transform_path: Optional[str] = None,
     ):
