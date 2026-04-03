@@ -21,13 +21,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ifmdd = [
-    "speechbrain@git+https://github.com/speechbrain/speechbrain.git@c6d2a8b1836dd86d06404c67d211e518a82fc407",
-    "huggingface_hub<1.0",
-    "requests",
-    "transformers",
-    "flashlight-text",
-]
 kanade = [
     "kanade-tokenizer",
     # flash-attn needs to be installed separately -- see README.md

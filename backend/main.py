@@ -39,13 +39,6 @@ from models_config import (
 DATA_ROOT = Path(os.getenv("DATA_ROOT"))
 
 
-@lru_cache()
-def get_ifmdd():
-    from speech_playground.ifmdd import IFMDD
-
-    return IFMDD()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     with tempfile.TemporaryDirectory(prefix="speech-playground") as tmpdirname:
@@ -190,24 +183,6 @@ def encoded_audio_for_comparison(
     y = model.encode(ywav)
 
     return model, x, y
-
-
-@app.post("/ifmdd")
-def ifmdd_transcribe_endpoint(file: UploadFile = File(...)):
-    ywav = AudioDecoder(file.file.read(), sample_rate=16000).get_all_samples().data.mean(dim=0)
-
-    predicted_tokens, sample_indices = get_ifmdd().transcribe_aligned(ywav)
-    timestamps = (sample_indices / 16000.0).tolist()
-
-    # timestamps are [start_1, start_2, ..., start_n] but we want [(start_1, start_2), (start_2, start_3), ..., (start_n-1, end)]
-    intervals = zip(timestamps, timestamps[1:] + [ywav.shape[0] / 16000.0])
-
-    result = [
-        {"start": start, "end": end, "content": token}
-        for (token, (start, end)) in zip(predicted_tokens, intervals)
-        if token != "sil"
-    ]
-    return {"intervals": result}
 
 
 @app.post("/compare")

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import ForcedAlignment from './ForcedAlignment.svelte';
-	import PhoneticTranscription from './PhoneticTranscription.svelte';
 	import Diff from './Diff.svelte';
 	import KeepAlive from './KeepAlive.svelte';
 	import AudioLibrary from './AudioLibrary.svelte';
@@ -9,7 +8,6 @@
 
 	const toolOptions = [
 		{ id: 'forced_alignment', label: 'Forced Alignment' },
-		{ id: 'transcribe', label: 'Phonetic Transcription' },
 		{ id: 'diff', label: 'Diff' }
 	];
 
@@ -39,11 +37,6 @@
 			<KeepAlive active={tools.includes('forced_alignment')}>
 				{#if tools.length > 1}<h3>Forced Alignment</h3>{/if}
 				<ForcedAlignment {tracks} active={tools.includes('forced_alignment')} />
-			</KeepAlive>
-
-			<KeepAlive active={tools.includes('transcribe')}>
-				{#if tools.length > 1}<h3>Phonetic Transcription</h3>{/if}
-				<PhoneticTranscription {tracks} active={tools.includes('transcribe')} />
 			</KeepAlive>
 
 			<KeepAlive active={tools.includes('diff')}>
