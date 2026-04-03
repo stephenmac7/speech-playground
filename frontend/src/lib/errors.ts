@@ -3,7 +3,7 @@
  * @param description A short, user-friendly description of what went wrong.
  * @param error The original error object or message.
  */
-export function reportError(description: string, error?: any) {
+export function reportError(description: string, error?: unknown) {
 	alert(description);
 	if (error) {
 		console.error('An error occurred:', error);

@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import { reportError } from '$lib/errors';
 
-	import { db, type AudioTrack } from '$lib/db';
+	import { db } from '$lib/db';
 	import { liveQuery } from 'dexie';
 
 	let {
@@ -28,8 +28,9 @@
 
 	let tracks = liveQuery(() => db.audio_tracks.toArray());
 
-        // this is a back so that that we get less reloads when the track list updates
-        // maybe it can be removed when dexie gets better
+	// this is a back so that that we get less reloads when the track list updates
+	// maybe it can be removed when dexie gets better
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const blobCache = new Map<number, Blob>();
 
 	let stableTracks = $derived.by(() => {

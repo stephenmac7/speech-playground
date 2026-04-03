@@ -3,6 +3,7 @@
 	import { reportError } from '$lib/errors';
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 
+	// eslint-disable-next-line no-useless-assignment
 	let { recorder, value = $bindable() }: { recorder: WavesurferRecorder; value: Blob | undefined } =
 		$props();
 

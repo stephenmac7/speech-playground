@@ -56,8 +56,9 @@
 		return new Promise((resolve, reject) => {
 			const updateRecordingState = () => {
 				// unfortunate hack
-				const data = (record as any).dataWindow;
-				if (data && data.some((v: number) => v !== 0)) {
+				// @ts-expect-error private record plugin API
+				const data = record.dataWindow as ArrayLike<number> | undefined;
+				if (data && Array.from(data).some((v) => v !== 0)) {
 					actualStartTime = performance.now();
 					wavesurfer.un('redraw', updateRecordingState);
 					resolve(); // Resolve the promise now that data is flowing
@@ -66,7 +67,7 @@
 
 			wavesurfer.on('redraw', updateRecordingState);
 
-			record.startRecording().catch((err: any) => {
+			record.startRecording().catch((err: unknown) => {
 				wavesurfer.un('redraw', updateRecordingState);
 				reject(err);
 			});

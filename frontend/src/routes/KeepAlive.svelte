@@ -1,7 +1,9 @@
 <script lang="ts">
-	let { active, children } = $props();
+	import type { Snippet } from 'svelte';
 
-	let hasBeenActive = $state(active);
+	let { active, children }: { active: boolean; children: Snippet } = $props();
+
+	let hasBeenActive = $state(false);
 	$effect(() => {
 		if (active) {
 			hasBeenActive = true;

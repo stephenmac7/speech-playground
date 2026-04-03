@@ -4,11 +4,13 @@
 	import { postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
 
-	let { tracks, active } = $props();
+	let { tracks, active }: { tracks: Record<string, Blob | null>; active: boolean } = $props();
 
-	let audio = $state(tracks['Audio']);
+	let audio = $state<Blob | undefined>();
 	$effect(() => {
-		if (active) audio = tracks['Audio'];
+		if (active || audio === undefined) {
+			audio = tracks['Audio'] ?? undefined;
+		}
 	});
 
 	let transcript = $state(PUBLIC_EXAMPLE_TRANSCRIPT);

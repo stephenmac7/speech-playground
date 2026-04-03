@@ -29,15 +29,15 @@
 	};
 
 	// ---------- Props ----------
-	let { tracks, active } = $props();
+	let { tracks, active }: { tracks: Record<string, Blob | null>; active: boolean } = $props();
 
 	// ---------- Base audio state ----------
-	let audio = $state(tracks['Audio']);
-	let modelAudio = $state(tracks['Model']);
+	let audio = $state<Blob | undefined>();
+	let modelAudio = $state<Blob | undefined>();
 	$effect(() => {
-		if (active) {
-			audio = tracks['Audio'];
-			modelAudio = tracks['Model'];
+		if (active || audio === undefined || modelAudio === undefined) {
+			audio = tracks['Audio'] ?? undefined;
+			modelAudio = tracks['Model'] ?? undefined;
 		}
 	});
 
@@ -343,7 +343,8 @@
 					<li>Drag on a waveform to play a selection.</li>
 					<li>Click on a region to play it.</li>
 				</ul>
-				<strong>Tip:</strong> Hold <kbd>Shift</kbd> while doing any of the above to perform these actions on the other track
+				<strong>Tip:</strong> Hold <kbd>Shift</kbd> while doing any of the above to perform these actions
+				on the other track
 			</Tooltip>
 		</div>
 		<SampleViewer
@@ -404,7 +405,7 @@
 					}}
 				>
 					{#if encoderOptions.length}
-						{#each encoderOptions as opt}
+						{#each encoderOptions as opt (opt.value)}
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					{:else}
@@ -429,7 +430,7 @@
 						Discretizer:
 						<select bind:value={discretizer}>
 							{#if supportsDiscretize && selectedEncoderOption}
-								{#each selectedEncoderOption.discretizers as opt}
+								{#each selectedEncoderOption.discretizers as opt (opt)}
 									<option value={opt}>{opt}</option>
 								{/each}
 							{:else}
@@ -508,9 +509,7 @@
 						Alignment Method:
 						<select bind:value={alignment_method}>
 							<option value="default"
-								>Default{selectedEncoderOption && !isFixedRateEncoder
-									? ' (Segmental)'
-									: ' (DTW)'}
+								>Default{selectedEncoderOption && !isFixedRateEncoder ? ' (Segmental)' : ' (DTW)'}
 							</option>
 							<option value="dtw">DTW</option>
 							<option value="segmental">Segmental</option>
@@ -543,12 +542,7 @@
 					</label>
 					<label class:disabled={!customAlpha}>
 						Alpha:
-						<input
-							type="number"
-							step="any"
-							bind:value={alpha}
-							disabled={!customAlpha}
-						/>
+						<input type="number" step="any" bind:value={alpha} disabled={!customAlpha} />
 					</label>
 				{/if}
 			</fieldset>
@@ -569,7 +563,7 @@
 				Model:
 				<select bind:value={voiceConversionModel}>
 					{#if vcModelOptions.length}
-						{#each vcModelOptions as opt}
+						{#each vcModelOptions as opt (opt.value)}
 							<option value={opt.value}>{opt.label}</option>
 						{/each}
 					{:else}

@@ -10,7 +10,7 @@
 	};
 
 	type CompareWith = {
-		other: { play: (start?: number, end?: number) => void, seek: (time?: number) => void };
+		other: { play: (start?: number, end?: number) => void; seek: (time?: number) => void };
 		alignedTimes?: number[][];
 	};
 
@@ -107,7 +107,8 @@
 
 	function mapTime(t?: number): number | undefined {
 		if (t === undefined) return undefined;
-		if (!compareWith || !compareWith.alignedTimes || compareWith.alignedTimes.length === 0) return 0;
+		if (!compareWith || !compareWith.alignedTimes || compareWith.alignedTimes.length === 0)
+			return 0;
 		const times = compareWith.alignedTimes;
 
 		let low = 0;
@@ -174,7 +175,7 @@
 			const otherEnd = mapTime(end);
 			if (otherStart !== undefined && otherEnd !== undefined) {
 				// wavesurfer.play handles start > end by playing from min(start, end) to max(start, end)
-				console.log("Playing other viewer from", otherStart, "to", otherEnd);
+				console.log('Playing other viewer from', otherStart, 'to', otherEnd);
 				compareWith.other.play(otherStart, otherEnd);
 			}
 		} else {
@@ -229,7 +230,7 @@
 		dragEndTime = Math.max(0, Math.min(dragEndTime, duration));
 
 		const region = getEffectiveRegion(dragEndTime);
-		
+
 		let start: number, end: number;
 
 		if (dragEndTime < dragStart) {
@@ -284,7 +285,16 @@
 		});
 		wavesurfer.on('play', () => (playing = true));
 		wavesurfer.on('pause', () => (playing = false));
-		(wavesurfer as any).renderer.initDrag(); // hack to enable drag events without dragToSeek set
+		// Enable drag events without dragToSeek (which adds its own conflicting handler).
+		// Wrap setOptions so the drag stream survives option updates (7.12+ cleans it up).
+		// @ts-expect-error private WaveSurfer renderer API
+		wavesurfer.renderer.initDrag();
+		const origSetOptions = wavesurfer.setOptions.bind(wavesurfer);
+		wavesurfer.setOptions = (...args: Parameters<typeof origSetOptions>) => {
+			origSetOptions(...args);
+			// @ts-expect-error private WaveSurfer renderer API
+			wavesurfer.renderer.initDrag();
+		};
 		wavesurfer.on('drag', (relativeX) => {
 			if (zoom && waveformContainer) {
 				const cursorX = relativeX * duration * pxPerSec;
@@ -308,8 +318,8 @@
 				if (!dragStart) wavesurfer.play();
 			});
 		}
-		wavesurfer.on('seeking', (currentTime) => {
-			playButton?.focus({focusVisible: false} as any);
+		wavesurfer.on('seeking', () => {
+			playButton?.focus({ preventScroll: true });
 		});
 		wavesurfer.on('click', (relativeX) => {
 			if (shiftDown && compareWith) {
@@ -433,9 +443,7 @@
 							onmousedown={handleRegionBarMouseDown}
 						>
 							{#if duration}
-								{#each regions as region}
-									<!-- svelte-ignore a11y_click_events_have_key_events -->
-									<!-- svelte-ignore a11y_no_static_element_interactions -->
+								{#each regions as region (`${region.start}-${region.end}-${region.content ?? ''}`)}
 									<div
 										class="region-under"
 										style:left="{region.start * pxPerSec}px"

@@ -269,12 +269,18 @@ export function buildSegmentRegions(
 			}
 			currentBadRegionScores.push(score);
 			consecutiveGoodFrames = 0; // Reset good frame counter
-		} else { // It's a good frame
+		} else {
+			// It's a good frame
 			if (currentBadRegionStart !== undefined) {
 				consecutiveGoodFrames++;
-				if (consecutiveGoodFrames > 2) { // Hysteresis threshold (2 good frames to break a bad region)
+				if (consecutiveGoodFrames > 2) {
+					// Hysteresis threshold (2 good frames to break a bad region)
 					// Finalize the bad region that ended before these good frames started
-					processRegion(currentBadRegionStart, i - consecutiveGoodFrames + 1, currentBadRegionScores);
+					processRegion(
+						currentBadRegionStart,
+						i - consecutiveGoodFrames + 1,
+						currentBadRegionScores
+					);
 					currentBadRegionStart = undefined;
 					currentBadRegionScores = [];
 					consecutiveGoodFrames = 0;
@@ -285,7 +291,11 @@ export function buildSegmentRegions(
 
 	// After the loop, if there's an open bad region, process it.
 	if (currentBadRegionStart !== undefined && currentBadRegionScores.length > 0) {
-		processRegion(currentBadRegionStart, scores.length - consecutiveGoodFrames, currentBadRegionScores);
+		processRegion(
+			currentBadRegionStart,
+			scores.length - consecutiveGoodFrames,
+			currentBadRegionScores
+		);
 	}
 
 	return regions;
