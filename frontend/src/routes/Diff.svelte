@@ -560,9 +560,7 @@
 				<Tooltip>
 					When enabled, the learner track is converted to the model's voice.
 					<br /><br />
-					"Reconstruct Model" will process the model's audio through the voice conversion model. This
-					can be useful to create a more fair comparison, by accounting for any artifacts introduced
-					by the voice conversion model itself.
+					"Reconstruct Model" will process the model's audio through the voice conversion model.
 				</Tooltip>
 			</legend>
 			<label> Enabled: <input type="checkbox" bind:checked={convertVoice} /> </label>

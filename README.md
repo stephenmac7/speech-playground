@@ -18,12 +18,6 @@ uv run --all-extras fastapi dev main.py
 # optional: skip --all-extras to use only some functionality
 ```
 
-For [Kanade](https://github.com/frothywater/kanade-tokenizer) with Flash Attention, you can optionally also run:
-```bash
-uv pip install ninja
-uv pip install flash-attn --no-build-isolation
-```
-
 - API: http://localhost:8000
 - Docs: http://localhost:8000/docs
 
@@ -53,7 +47,7 @@ This project uses lazy loading for various speech processing models and encoders
 - Additional dependencies may be required depending on which features you use
 - Some imports will fail until you install the necessary optional dependencies for the encoder/tokenizer you want to use
 
-Note on [Kanade](https://github.com/frothywater/kanade-tokenizer): Most dependencies are listed properly in the `kanade` group, but you'll need to install flash-attn by hand. See the Kanade repository instructions; a common sequence is shown above.
+Note on [Kanade](https://github.com/frothywater/kanade-tokenizer): the `kanade` extra should be enough here. We rely on PyTorch's SDPA path in the pinned torch line for the attention optimizations we want.
 
 ## Deploying
 (Instructions from Svelte -- have not tried this yet)

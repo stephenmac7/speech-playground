@@ -3,21 +3,20 @@ name = "speech-playground"
 version = "0.1.0"
 description = "Library for speech processing"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2.3.4",
-    "torch>=2.8,<2.9",
-    "torchaudio>=2.8,<2.9",
+    "torch>=2.11",
+    "torchaudio>=2.11",
     "matplotlib>=3.10.7",
     "scikit-learn>=1.7.2",
     "joblib>=1.5.2",
-    "torchcodec==0.7",
+    "torchcodec",
 ]
 
 [project.optional-dependencies]
 kanade = [
     "kanade-tokenizer",
-    # flash-attn needs to be installed separately -- see README.md
 ]
 dpdp = ["numba"]
 sylber = ["sylber", "traitlets"]
@@ -25,6 +24,3 @@ inversion = [
     "loralib",
     "transformers",
 ]
-
-[tool.uv.sources]
-kanade-tokenizer = { git = "https://github.com/frothywater/kanade-tokenizer" }

@@ -3,7 +3,7 @@ name = "speech-playground-backend"
 version = "0.1.0"
 description = "Backend for Speech Playground"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi[standard]>=0.119",
     "numpy>=2.3.4",
@@ -23,7 +23,6 @@ dependencies = [
 [project.optional-dependencies]
 kanade = [
     "kanade-tokenizer",
-    # flash-attn needs to be installed separately -- see README.md
 ]
 dpdp = ["numba"]
 sylber = ["sylber", "traitlets"]
@@ -33,5 +32,13 @@ inversion = [
 ]
 
 [tool.uv.sources]
-kanade-tokenizer = { git = "https://github.com/frothywater/kanade-tokenizer" }
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+torchcodec = { index = "pytorch-cu128" }
+kanade-tokenizer = {  git = "https://github.com/frothywater/kanade-tokenizer" }
 speech-playground = { path = "../lib", editable = true }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
