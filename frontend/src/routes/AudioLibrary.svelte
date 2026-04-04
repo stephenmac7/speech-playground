@@ -4,14 +4,17 @@
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 	import { untrack } from 'svelte';
 	import { reportError } from '$lib/errors';
+	import { postJson } from '$lib/api';
 
-	import { db } from '$lib/db';
+	import { db, type TextGridData } from '$lib/db';
 	import { liveQuery } from 'dexie';
+
+	export type TrackData = { data: Blob | null; textgrid: TextGridData | null };
 
 	let {
 		requestedTracks,
 		tracksByKey = $bindable()
-	}: { requestedTracks: string[]; tracksByKey: Record<string, Blob | null> } = $props();
+	}: { requestedTracks: string[]; tracksByKey: Record<string, TrackData> } = $props();
 
 	let recorder: WavesurferRecorder | undefined = $state();
 	let selectedTrackRequestKey = $state<string | null>(null);
@@ -61,14 +64,13 @@
 			return;
 		}
 
-		let newTracksByKey: Record<string, Blob | null> = { ...untrack(() => tracksByKey) };
+		let newTracksByKey: Record<string, TrackData> = { ...untrack(() => tracksByKey) };
 		requestedTracks.forEach((key: string) => {
 			const track = $tracks.find((t) => t.keys?.includes(key));
-			if (track && track.data) {
-				newTracksByKey[key] = track.data;
-			} else {
-				newTracksByKey[key] = null;
-			}
+			newTracksByKey[key] = {
+				data: track?.data ?? null,
+				textgrid: track?.textgrid ?? null
+			};
 		});
 		tracksByKey = newTracksByKey;
 	});
@@ -89,6 +91,29 @@
 	function updateTrack(id: number, blob: Blob | undefined) {
 		blobCache.delete(id);
 		db.audio_tracks.update(id, { data: blob });
+	}
+
+	function updateTrackTextgrid(id: number, textgrid: TextGridData | undefined) {
+		db.audio_tracks.update(id, { textgrid });
+	}
+
+	function openTextGridPicker(trackId: number) {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.TextGrid';
+		input.onchange = async () => {
+			const file = input.files?.[0];
+			if (!file) return;
+			const formData = new FormData();
+			formData.append('file', file);
+			try {
+				const tg = await postJson<TextGridData>('/api/parse_tg', formData);
+				db.audio_tracks.update(trackId, { textgrid: tg });
+			} catch (e) {
+				reportError('Error parsing TextGrid file.', e);
+			}
+		};
+		input.click();
 	}
 
 	function selectTrackRequest(key: string) {
@@ -200,6 +225,14 @@
 				</button>
 				<button
 					class="track-action-button"
+					class:has-textgrid={!!track.textgrid}
+					onclick={() => openTextGridPicker(track.id)}
+					title="Attach TextGrid"
+				>
+					<span style="font-weight: bold; font-size: 14px;">T</span>
+				</button>
+				<button
+					class="track-action-button"
 					onclick={() => deleteTrack(track.id)}
 					title="Delete track"
 				>
@@ -223,6 +256,10 @@
 			<AudioSelector
 				{recorder}
 				bind:value={() => track.data, (blob) => updateTrack(track.id, blob)}
+				bind:textgrid={
+					() => track.textgrid,
+					(tg) => updateTrackTextgrid(track.id, tg)
+				}
 			/>
 		</fieldset>
 	{/each}
@@ -343,5 +380,9 @@
 	}
 	.track-action-button:disabled {
 		display: none;
+	}
+	.track-action-button.has-textgrid {
+		background-color: #d4edda;
+		border-color: #28a745;
 	}
 </style>

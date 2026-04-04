@@ -8,6 +8,11 @@ export type Region = {
 	color?: string;
 };
 
+export type Tier = {
+	name?: string;
+	regions: Region[];
+};
+
 export function buildContinuousRegions(
 	allScores: number[],
 	segments: number[][],

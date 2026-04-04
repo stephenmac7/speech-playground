@@ -3,15 +3,36 @@
 	import SampleViewer from './SampleViewer.svelte';
 	import { postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
+	import type { Tier } from '$lib/regions';
 
-	let { tracks, active }: { tracks: Record<string, Blob | null>; active: boolean } = $props();
+	let {
+		tracks,
+		active
+	}: {
+		tracks: Record<string, import('./AudioLibrary.svelte').TrackData>;
+		active: boolean;
+	} = $props();
 
 	let audio = $state<Blob | undefined>();
 	$effect(() => {
 		if (active || audio === undefined) {
-			audio = tracks['Audio'] ?? undefined;
+			audio = tracks['Audio']?.data ?? undefined;
 		}
 	});
+
+	function textgridTiersForKey(key: string): Tier[] {
+		const tg = tracks[key]?.textgrid;
+		if (!tg) return [];
+		return Object.entries(tg).map(([name, intervals]) => ({
+			name,
+			regions: intervals.map((iv) => ({
+				start: iv.start,
+				end: iv.end,
+				content: iv.content,
+				color: 'rgba(160, 200, 255, 0.6)'
+			}))
+		}));
+	}
 
 	let transcript = $state(PUBLIC_EXAMPLE_TRANSCRIPT);
 	type Alignment = Record<string, unknown>;
@@ -59,7 +80,10 @@
 </script>
 
 <div class="viewer-card">
-	<SampleViewer {audio} {regions} />
+	<SampleViewer
+		{audio}
+		tiers={[{ name: mode, regions }, ...textgridTiersForKey('Audio')]}
+	/>
 </div>
 
 <div class="controls">

@@ -1,13 +1,7 @@
 <script lang="ts">
 	import WaveSurfer from 'wavesurfer.js';
 	import { onMount } from 'svelte';
-
-	type Region = {
-		start: number;
-		end: number;
-		color?: string;
-		content?: string;
-	};
+	import type { Region, Tier } from '$lib/regions';
 
 	type CompareWith = {
 		other: { play: (start?: number, end?: number) => void; seek: (time?: number) => void };
@@ -16,7 +10,7 @@
 
 	let {
 		audio,
-		regions = [],
+		tiers = [],
 		clickToPlay = false,
 		zoom = true,
 		layout = 'default',
@@ -24,7 +18,7 @@
 		currentTime = $bindable(0)
 	}: {
 		audio?: Blob;
-		regions?: Region[];
+		tiers?: Tier[];
 		clickToPlay?: boolean;
 		zoom?: boolean;
 		layout?: 'default' | 'compact';
@@ -136,12 +130,14 @@
 		return t0[1] + ratio * (t1[1] - t0[1]);
 	}
 
+	let activeTierRegions: Region[] = [];
+
 	function getEffectiveRegion(time: number): { start: number; end: number } {
-		if (!regions || regions.length === 0) {
+		if (!activeTierRegions || activeTierRegions.length === 0) {
 			return { start: 0, end: duration };
 		}
 
-		const sortedRegions = [...regions].sort((a, b) => a.start - b.start);
+		const sortedRegions = [...activeTierRegions].sort((a, b) => a.start - b.start);
 
 		for (const region of sortedRegions) {
 			if (time >= region.start && time <= region.end) {
@@ -183,12 +179,13 @@
 		}
 	}
 
-	function handleRegionBarMouseDown(e: MouseEvent) {
+	function handleRegionBarMouseDown(e: MouseEvent, tierRegions: Region[]) {
 		if (e.button !== 0) return;
 		e.preventDefault();
 
 		if (!wavesurfer) return;
 		if (!waveformContainer) return;
+		activeTierRegions = tierRegions;
 		const rect = waveformContainer.getBoundingClientRect();
 		const x = e.clientX - rect.left;
 		const time = (waveformContainer.scrollLeft + x) / pxPerSec;
@@ -245,6 +242,7 @@
 
 		dragStart = undefined;
 		playOther = false;
+		playButton?.focus({ preventScroll: true });
 	}
 
 	onMount(() => {
@@ -258,7 +256,7 @@
 			height: height,
 			mediaControls: false,
 			backend: 'WebAudio',
-			hideScrollbar: false,
+			hideScrollbar: true,
 			autoCenter: false,
 			autoScroll: false
 		});
@@ -402,7 +400,7 @@
 
 <svelte:window on:keydown={handleKeydown} on:keyup={handleKeyup} on:blur={handleWindowBlur} />
 
-<div class="sample-viewer" class:compact={layout === 'compact'}>
+<div class="sample-viewer" class:compact={layout === 'compact'} style:--waveform-height="{height}px">
 	{#if layout !== 'compact'}
 		<button bind:this={playButton} onclick={() => wavesurfer.playPause()}>
 			{#if playing}
@@ -434,31 +432,33 @@
 					: '100%'}
 			>
 				<div id="wavesurfer" bind:this={node}></div>
-				{#if regions.length > 0}
-					<div class="regions-bar">
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							class="regions-timeline"
-							style:width="{duration * pxPerSec}px"
-							onmousedown={handleRegionBarMouseDown}
-						>
-							{#if duration}
-								{#each regions as region (`${region.start}-${region.end}-${region.content ?? ''}`)}
-									<div
-										class="region-under"
-										style:left="{region.start * pxPerSec}px"
-										style:width="{(region.end - region.start) * pxPerSec}px"
-										style:background-color={region.color ?? 'rgba(255, 255, 197, 0.5)'}
-									>
-										{#if region.content}
-											<div class="region-content-under">{region.content}</div>
-										{/if}
-									</div>
-								{/each}
-							{/if}
+				{#each tiers as tier (tier)}
+					{#if tier.regions.length > 0}
+						<div class="regions-bar">
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="regions-timeline"
+								style:width="{duration * pxPerSec}px"
+								onmousedown={(e) => handleRegionBarMouseDown(e, tier.regions)}
+							>
+								{#if duration}
+									{#each tier.regions as region (`${region.start}-${region.end}-${region.content ?? ''}`)}
+										<div
+											class="region-under"
+											style:left="{region.start * pxPerSec}px"
+											style:width="{(region.end - region.start) * pxPerSec}px"
+											style:background-color={region.color ?? 'rgba(255, 255, 197, 0.5)'}
+										>
+											{#if region.content}
+												<div class="region-content-under">{region.content}</div>
+											{/if}
+										</div>
+									{/each}
+								{/if}
+							</div>
 						</div>
-					</div>
-				{/if}
+					{/if}
+				{/each}
 			</div>
 		</div>
 		<span id="duration">{duration ? format(duration) : '--:--'}</span>
@@ -477,7 +477,7 @@
 <style>
 	.sample-viewer {
 		display: flex;
-		align-items: center;
+		align-items: start;
 		gap: 1em;
 		contain: paint;
 		position: relative;
@@ -503,6 +503,8 @@
 		align-items: center;
 		padding: 0;
 		flex-shrink: 0;
+		/* Center vertically against the waveform, not the full column including tiers */
+		margin-top: calc((var(--waveform-height) - 48px) / 2);
 	}
 
 	.sample-viewer.compact {
@@ -519,12 +521,16 @@
 	.labels {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
+		align-items: start;
 		gap: 0.5em;
 		flex-grow: 1;
 	}
 	.labels span {
 		width: 3em;
+		/* Center vertically against the waveform height */
+		height: var(--waveform-height);
+		display: flex;
+		align-items: center;
 	}
 	.labels span#duration {
 		text-align: right;

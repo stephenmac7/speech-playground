@@ -112,6 +112,29 @@ def textgrid_endpoint(filename: str):
     return parse_textgrid_to_json(filename)
 
 
+@app.get("/data_tg/{filename:path}")
+def data_textgrid_endpoint(filename: str):
+    """Look up a .TextGrid file corresponding to a .wav filename under DATA_ROOT."""
+    if not filename.endswith(".wav"):
+        raise HTTPException(status_code=400, detail="Expected a .wav filename.")
+    tg_filename = filename[:-4] + ".TextGrid"
+    path = (DATA_ROOT / tg_filename).resolve()
+    if not str(path).startswith(str(DATA_ROOT.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="TextGrid file not found.")
+    return parse_textgrid_to_json(str(path))
+
+
+@app.post("/parse_tg")
+def parse_textgrid_upload_endpoint(file: UploadFile = File(...)):
+    """Parse an uploaded TextGrid file and return JSON."""
+    content = file.file.read()
+    tmp_path = tmpdir / "upload.TextGrid"
+    tmp_path.write_bytes(content)
+    return parse_textgrid_to_json(str(tmp_path))
+
+
 def vad(wav, *args, **kwargs):
     trimmed_start = F.vad(wav, *args, **kwargs)
     trimmed_end = F.vad(torch.flip(trimmed_start, dims=[1]), *args, **kwargs)

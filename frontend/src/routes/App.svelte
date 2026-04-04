@@ -13,7 +13,7 @@
 
 	let requestedTracks = $derived(tools.includes('diff') ? ['Model', 'Audio'] : ['Audio']);
 
-	let tracks = $state({});
+	let tracks: Record<string, import('./AudioLibrary.svelte').TrackData> = $state({});
 </script>
 
 <div class="app-container">

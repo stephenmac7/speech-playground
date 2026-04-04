@@ -6,7 +6,8 @@
 		buildContinuousRegions,
 		buildSegmentRegions,
 		buildCombinedModelRegions,
-		type Region
+		type Region,
+		type Tier
 	} from '$lib/regions';
 	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
@@ -29,17 +30,38 @@
 	};
 
 	// ---------- Props ----------
-	let { tracks, active }: { tracks: Record<string, Blob | null>; active: boolean } = $props();
+	let {
+		tracks,
+		active
+	}: {
+		tracks: Record<string, import('./AudioLibrary.svelte').TrackData>;
+		active: boolean;
+	} = $props();
 
 	// ---------- Base audio state ----------
 	let audio = $state<Blob | undefined>();
 	let modelAudio = $state<Blob | undefined>();
 	$effect(() => {
 		if (active || audio === undefined || modelAudio === undefined) {
-			audio = tracks['Audio'] ?? undefined;
-			modelAudio = tracks['Model'] ?? undefined;
+			audio = tracks['Audio']?.data ?? undefined;
+			modelAudio = tracks['Model']?.data ?? undefined;
 		}
 	});
+
+	// ---------- TextGrid tiers ----------
+	function textgridTiersForKey(key: string): Tier[] {
+		const tg = tracks[key]?.textgrid;
+		if (!tg) return [];
+		return Object.entries(tg).map(([name, intervals]) => ({
+			name,
+			regions: intervals.map((iv) => ({
+				start: iv.start,
+				end: iv.end,
+				content: iv.content,
+				color: 'rgba(160, 200, 255, 0.6)'
+			}))
+		}));
+	}
 
 	// ---------- Voice conversion & reconstruction ----------
 	let convertVoice = $state(false);
@@ -349,7 +371,7 @@
 		</div>
 		<SampleViewer
 			audio={reconstructModel ? reconstructedAudio : modelAudio}
-			regions={modelRegions}
+			tiers={[{ regions: modelRegions }, ...textgridTiersForKey('Model')]}
 			bind:this={modelViewer}
 			compareWith={learnerViewer
 				? {
@@ -363,7 +385,7 @@
 		</div>
 		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}
-			regions={userRegions}
+			tiers={[{ regions: userRegions }, ...textgridTiersForKey('Audio')]}
 			compareWith={modelViewer
 				? {
 						other: modelViewer,

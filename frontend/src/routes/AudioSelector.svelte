@@ -1,10 +1,15 @@
 <script lang="ts">
-	import { getBlob, postBlob } from '$lib/api';
+	import { getBlob, getJson, postBlob } from '$lib/api';
 	import { reportError } from '$lib/errors';
+	import type { TextGridData } from '$lib/db';
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 
 	// eslint-disable-next-line no-useless-assignment
-	let { recorder, value = $bindable() }: { recorder: WavesurferRecorder; value: Blob | undefined } =
+	let {
+		recorder,
+		value = $bindable(),
+		textgrid = $bindable()
+	}: { recorder: WavesurferRecorder; value: Blob | undefined; textgrid: TextGridData | undefined } =
 		$props();
 
 	let startingRecording = $state(false);
@@ -29,6 +34,15 @@
 			try {
 				serverAudio = await getBlob(`/api/data/${apiServerFilePath}`, controller.signal);
 				value = serverAudio;
+				// Try to auto-fetch corresponding TextGrid
+				try {
+					textgrid = await getJson<TextGridData>(
+						`/api/data_tg/${apiServerFilePath}`,
+						controller.signal
+					);
+				} catch {
+					textgrid = undefined;
+				}
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError') {
 					reportError(`Error fetching server audio.`, e);
@@ -41,6 +55,7 @@
 
 	async function handleProcessAudio(blob: Blob, apply_vad: boolean) {
 		processingAudio = true;
+		textgrid = undefined;
 
 		const formData = new FormData();
 		formData.append('file', blob, 'recording.wav');

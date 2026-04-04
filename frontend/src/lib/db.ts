@@ -4,10 +4,13 @@ import { getBlob } from '$lib/api';
 import { reportError } from '$lib/errors';
 import Dexie, { type EntityTable } from 'dexie';
 
+export type TextGridData = Record<string, Array<{ start: number; end: number; content: string }>>;
+
 interface AudioTrack {
 	id: number;
 	keys: string[];
 	data?: Blob;
+	textgrid?: TextGridData;
 }
 
 const db = new Dexie('AudioDatabase') as Dexie & {
