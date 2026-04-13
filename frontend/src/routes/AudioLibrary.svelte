@@ -229,7 +229,7 @@
 					onclick={() => openTextGridPicker(track.id)}
 					title="Attach TextGrid"
 				>
-					<span style="font-weight: bold; font-size: 14px;">T</span>
+					<span style="font-weight: bold; font-size: 14px; letter-spacing: -1px;"><span style="display: inline-block; transform: translateY(-2px);">T</span><span style="display: inline-block; transform: translateY(2px);">G</span></span>
 				</button>
 				<button
 					class="track-action-button"
