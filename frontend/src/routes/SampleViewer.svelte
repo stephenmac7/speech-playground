@@ -2,6 +2,11 @@
 	import WaveSurfer from 'wavesurfer.js';
 	import { onMount } from 'svelte';
 	import type { Region, Tier } from '$lib/regions';
+	import { postJson } from '$lib/api';
+	import { reportError } from '$lib/errors';
+
+	const ALIGNMENT_TIER_PREFIX = 'alignment:';
+	const ALIGNMENT_COLOR = 'rgba(170, 220, 180, 0.6)';
 
 	type CompareWith = {
 		other: { play: (start?: number, end?: number) => void; seek: (time?: number) => void };
@@ -11,6 +16,7 @@
 	let {
 		audio,
 		tiers = [],
+		transcript,
 		clickToPlay = false,
 		zoom = true,
 		layout = 'default',
@@ -19,6 +25,7 @@
 	}: {
 		audio?: Blob;
 		tiers?: Tier[];
+		transcript?: string;
 		clickToPlay?: boolean;
 		zoom?: boolean;
 		layout?: 'default' | 'compact';
@@ -134,7 +141,85 @@
 	let hiddenTierNames = $state(new Set<string>());
 	let tierMenuOpen = $state(false);
 
-	let tiersWithRegions = $derived(tiers.filter((t) => t.regions.length > 0));
+	/* Forced alignment */
+	let alignmentEnabled = $state(false);
+	let alignmentTiers = $state<Tier[]>([]);
+	let alignmentLoading = $state(false);
+
+	type AlignmentResponse = { phones?: Region[]; words?: Region[] };
+
+	$effect(() => {
+		if (!transcript) alignmentEnabled = false;
+	});
+
+	$effect(() => {
+		if (!alignmentEnabled) {
+			alignmentTiers = [];
+			alignmentLoading = false;
+			return;
+		}
+		if (!audio || !transcript) return;
+
+		const controller = new AbortController();
+		let aborted = false;
+
+		(async () => {
+			alignmentLoading = true;
+			alignmentTiers = [];
+			const formData = new FormData();
+			formData.append('audio', audio, 'recording.wav');
+			formData.append('transcript', transcript);
+			try {
+				const result = await postJson<AlignmentResponse>(
+					'/api/align',
+					formData,
+					controller.signal
+				);
+				if (aborted) return;
+				const tiersOut: Tier[] = [];
+				for (const name of ['phones', 'words'] as const) {
+					const regions = result[name];
+					if (Array.isArray(regions)) {
+						tiersOut.push({
+							name: `${ALIGNMENT_TIER_PREFIX}${name}`,
+							regions: regions.map((r) => ({ ...r, color: ALIGNMENT_COLOR }))
+						});
+					}
+				}
+				alignmentTiers = tiersOut;
+			} catch (e: unknown) {
+				if ((e as { name?: string })?.name !== 'AbortError') {
+					reportError('Error fetching forced alignment.', e);
+					if (!aborted) {
+						alignmentTiers = [];
+						alignmentEnabled = false;
+					}
+				}
+			} finally {
+				if (!aborted) alignmentLoading = false;
+			}
+		})();
+
+		return () => {
+			aborted = true;
+			controller.abort();
+		};
+	});
+
+	function stripAlignmentPrefix(name: string): string {
+		return name.startsWith(ALIGNMENT_TIER_PREFIX)
+			? name.slice(ALIGNMENT_TIER_PREFIX.length)
+			: name;
+	}
+
+	let allTiers = $derived([...tiers, ...alignmentTiers]);
+	let tiersWithRegions = $derived(allTiers.filter((t) => t.regions.length > 0));
+	let textgridTiersWithRegions = $derived(
+		tiersWithRegions.filter((t) => !t.name?.startsWith(ALIGNMENT_TIER_PREFIX))
+	);
+	let alignmentTiersWithRegions = $derived(
+		tiersWithRegions.filter((t) => t.name?.startsWith(ALIGNMENT_TIER_PREFIX))
+	);
 	let visibleTiers = $derived(tiersWithRegions.filter((t) => !hiddenTierNames.has(t.name!)));
 
 	function toggleTier(label: string) {
@@ -479,7 +564,7 @@
 				{/each}
 			</div>
 		</div>
-		{#if tiersWithRegions.length > 0}
+		{#if tiersWithRegions.length > 0 || transcript !== undefined}
 			<div class="tier-menu-anchor">
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
@@ -501,7 +586,7 @@
 					></div>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div class="tier-menu" onclick={(e) => e.stopPropagation()}>
-							{#each tiersWithRegions as tier}
+							{#each textgridTiersWithRegions as tier}
 								{@const isVisible = !hiddenTierNames.has(tier.name!)}
 								{@const isLastVisible = isVisible && visibleTiers.length === 1}
 								<label class="tier-menu-item" class:disabled={isLastVisible}>
@@ -514,6 +599,36 @@
 									{tier.name}
 								</label>
 							{/each}
+							{#if textgridTiersWithRegions.length > 0}
+								<div class="tier-menu-separator"></div>
+							{/if}
+							<label
+								class="tier-menu-item"
+								class:disabled={!transcript}
+								title={!transcript ? 'Track has no transcript' : undefined}
+							>
+								<input
+									type="checkbox"
+									bind:checked={alignmentEnabled}
+									disabled={!transcript}
+								/>
+								Forced alignment{alignmentLoading ? ' (loading…)' : ''}
+							</label>
+							{#if alignmentEnabled}
+								{#each alignmentTiersWithRegions as tier}
+									{@const isVisible = !hiddenTierNames.has(tier.name!)}
+									{@const isLastVisible = isVisible && visibleTiers.length === 1}
+									<label class="tier-menu-item sub" class:disabled={isLastVisible}>
+										<input
+											type="checkbox"
+											checked={isVisible}
+											disabled={isLastVisible}
+											onchange={() => toggleTier(tier.name!)}
+										/>
+										{stripAlignmentPrefix(tier.name!)}
+									</label>
+								{/each}
+							{/if}
 						</div>
 					{/if}
 				</div>
@@ -703,6 +818,13 @@
 	}
 	.tier-menu-item:hover {
 		background: var(--background-color, #f3f4f6);
+	}
+	.tier-menu-item.sub {
+		padding-left: 24px;
+	}
+	.tier-menu-separator {
+		border-top: 1px solid var(--border-color, #e5e7eb);
+		margin: 4px 0;
 	}
 	.tier-menu-item.disabled {
 		cursor: not-allowed;

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import ForcedAlignment from './ForcedAlignment.svelte';
 	import Diff from './Diff.svelte';
 	import KeepAlive from './KeepAlive.svelte';
 	import AudioLibrary from './AudioLibrary.svelte';
@@ -7,7 +6,6 @@
 	let tools = $state(['diff']);
 
 	const toolOptions = [
-		{ id: 'forced_alignment', label: 'Forced Alignment' },
 		{ id: 'diff', label: 'Diff' }
 	];
 
@@ -34,11 +32,6 @@
 
 	<main>
 		<div class="tool-display">
-			<KeepAlive active={tools.includes('forced_alignment')}>
-				{#if tools.length > 1}<h3>Forced Alignment</h3>{/if}
-				<ForcedAlignment {tracks} active={tools.includes('forced_alignment')} />
-			</KeepAlive>
-
 			<KeepAlive active={tools.includes('diff')}>
 				{#if tools.length > 1}<h3>Diff</h3>{/if}
 				<Diff {tracks} active={tools.includes('diff')} />

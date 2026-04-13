@@ -372,6 +372,7 @@
 		<SampleViewer
 			audio={reconstructModel ? reconstructedAudio : modelAudio}
 			tiers={[{ name: 'Distance', regions: modelRegions }, ...textgridTiersForKey('Model')]}
+			transcript={tracks['Model']?.transcript ?? undefined}
 			bind:this={modelViewer}
 			compareWith={learnerViewer
 				? {
@@ -386,6 +387,7 @@
 		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}
 			tiers={[{ name: 'Distance', regions: userRegions }, ...textgridTiersForKey('Audio')]}
+			transcript={tracks['Audio']?.transcript ?? undefined}
 			compareWith={modelViewer
 				? {
 						other: modelViewer,
