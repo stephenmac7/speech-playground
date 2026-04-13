@@ -130,6 +130,24 @@
 		return t0[1] + ratio * (t1[1] - t0[1]);
 	}
 
+	/* Tier visibility */
+	let hiddenTierNames = $state(new Set<string>());
+	let tierMenuOpen = $state(false);
+
+	let tiersWithRegions = $derived(tiers.filter((t) => t.regions.length > 0));
+	let visibleTiers = $derived(tiersWithRegions.filter((t) => !hiddenTierNames.has(t.name!)));
+
+	function toggleTier(label: string) {
+		const next = new Set(hiddenTierNames);
+		if (next.has(label)) next.delete(label);
+		else next.add(label);
+		hiddenTierNames = next;
+	}
+
+	function closeTierMenu() {
+		tierMenuOpen = false;
+	}
+
 	let activeTierRegions: Region[] = [];
 
 	function getEffectiveRegion(time: number): { start: number; end: number } {
@@ -366,6 +384,8 @@
 			isFitToView = true;
 			pxPerSec = 0;
 			accumulatedDelta = 0;
+			hiddenTierNames = new Set();
+			tierMenuOpen = false;
 			wavesurfer.loadBlob(audio);
 		}
 	});
@@ -432,35 +452,73 @@
 					: '100%'}
 			>
 				<div id="wavesurfer" bind:this={node}></div>
-				{#each tiers as tier (tier)}
-					{#if tier.regions.length > 0}
-						<div class="regions-bar">
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div
-								class="regions-timeline"
-								style:width="{duration * pxPerSec}px"
-								onmousedown={(e) => handleRegionBarMouseDown(e, tier.regions)}
-							>
-								{#if duration}
-									{#each tier.regions as region (`${region.start}-${region.end}-${region.content ?? ''}`)}
-										<div
-											class="region-under"
-											style:left="{region.start * pxPerSec}px"
-											style:width="{(region.end - region.start) * pxPerSec}px"
-											style:background-color={region.color ?? 'rgba(255, 255, 197, 0.5)'}
-										>
-											{#if region.content}
-												<div class="region-content-under">{region.content}</div>
-											{/if}
-										</div>
-									{/each}
-								{/if}
-							</div>
+				{#each visibleTiers as tier (tier)}
+					<div class="regions-bar">
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class="regions-timeline"
+							style:width="{duration * pxPerSec}px"
+							onmousedown={(e) => handleRegionBarMouseDown(e, tier.regions)}
+						>
+							{#if duration}
+								{#each tier.regions as region (`${region.start}-${region.end}-${region.content ?? ''}`)}
+									<div
+										class="region-under"
+										style:left="{region.start * pxPerSec}px"
+										style:width="{(region.end - region.start) * pxPerSec}px"
+										style:background-color={region.color ?? 'rgba(255, 255, 197, 0.5)'}
+									>
+										{#if region.content}
+											<div class="region-content-under">{region.content}</div>
+										{/if}
+									</div>
+								{/each}
+							{/if}
 						</div>
-					{/if}
+					</div>
 				{/each}
 			</div>
 		</div>
+		{#if tiersWithRegions.length > 0}
+			<div class="tier-menu-anchor">
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="tier-menu-toggle"
+					onclick={() => (tierMenuOpen = !tierMenuOpen)}
+				>
+					<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
+						<title>Toggle tiers</title>
+						<path d="M4 6l4 4 4-4z" />
+					</svg>
+					{#if tierMenuOpen}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+						class="tier-menu-backdrop"
+						onclick={(e) => {
+							e.stopPropagation();
+							closeTierMenu();
+						}}
+					></div>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="tier-menu" onclick={(e) => e.stopPropagation()}>
+							{#each tiersWithRegions as tier}
+								{@const isVisible = !hiddenTierNames.has(tier.name!)}
+								{@const isLastVisible = isVisible && visibleTiers.length === 1}
+								<label class="tier-menu-item" class:disabled={isLastVisible}>
+									<input
+										type="checkbox"
+										checked={isVisible}
+										disabled={isLastVisible}
+										onchange={() => toggleTier(tier.name!)}
+									/>
+									{tier.name}
+								</label>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			</div>
+		{/if}
 		<span id="duration">{duration ? format(duration) : '--:--'}</span>
 	</div>
 	{#if layout === 'compact'}
@@ -479,7 +537,6 @@
 		display: flex;
 		align-items: start;
 		gap: 1em;
-		contain: paint;
 		position: relative;
 	}
 
@@ -524,6 +581,7 @@
 		align-items: start;
 		gap: 0.5em;
 		flex-grow: 1;
+		position: relative;
 	}
 	.labels span {
 		width: 3em;
@@ -584,6 +642,74 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		user-select: none;
+	}
+
+	.tier-menu-anchor {
+		position: absolute;
+		/* Sit in the left gutter (under the time label), aligned vertically
+		   with the first tier bar so the menu clearly belongs to the tiers. */
+		left: 0;
+		top: var(--waveform-height);
+		width: calc(3em + 0.5em);
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		padding-right: 10px;
+		z-index: 10;
+	}
+
+	.tier-menu-toggle {
+		cursor: pointer;
+		line-height: 0;
+		position: relative;
+	}
+	.tier-menu-toggle svg {
+		opacity: 0.5;
+		transition: opacity 0.15s;
+	}
+	.tier-menu-toggle:hover svg {
+		opacity: 0.9;
+	}
+
+	.tier-menu-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 99;
+	}
+
+	.tier-menu {
+		position: absolute;
+		left: 0;
+		top: 100%;
+		z-index: 100;
+		background: var(--surface-color, #fff);
+		border: 1px solid var(--border-color, #e5e7eb);
+		border-radius: 6px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		padding: 4px 0;
+		min-width: 140px;
+		white-space: nowrap;
+	}
+
+	.tier-menu-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 10px;
+		font-size: 13px;
+		cursor: pointer;
+		user-select: none;
+	}
+	.tier-menu-item:hover {
+		background: var(--background-color, #f3f4f6);
+	}
+	.tier-menu-item.disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+	.tier-menu-item.disabled:hover {
+		background: transparent;
 	}
 
 	#wavesurfer :global ::part(region) {

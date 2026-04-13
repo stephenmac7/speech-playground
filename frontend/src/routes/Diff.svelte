@@ -371,7 +371,7 @@
 		</div>
 		<SampleViewer
 			audio={reconstructModel ? reconstructedAudio : modelAudio}
-			tiers={[{ regions: modelRegions }, ...textgridTiersForKey('Model')]}
+			tiers={[{ name: 'Distance', regions: modelRegions }, ...textgridTiersForKey('Model')]}
 			bind:this={modelViewer}
 			compareWith={learnerViewer
 				? {
@@ -385,7 +385,7 @@
 		</div>
 		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}
-			tiers={[{ regions: userRegions }, ...textgridTiersForKey('Audio')]}
+			tiers={[{ name: 'Distance', regions: userRegions }, ...textgridTiersForKey('Audio')]}
 			compareWith={modelViewer
 				? {
 						other: modelViewer,
