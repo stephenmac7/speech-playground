@@ -8,9 +8,33 @@
 	let {
 		recorder,
 		value = $bindable(),
-		textgrid = $bindable()
-	}: { recorder: WavesurferRecorder; value: Blob | undefined; textgrid: TextGridData | undefined } =
-		$props();
+		textgrid = $bindable(),
+		transcript = $bindable()
+	}: {
+		recorder: WavesurferRecorder;
+		value: Blob | undefined;
+		textgrid: TextGridData | undefined;
+		transcript: string | undefined;
+	} = $props();
+
+	let serverPopoverOpen = $state(false);
+	let transcriptEditing = $state(false);
+	let transcriptDraft = $state('');
+
+	function startEditTranscript() {
+		transcriptDraft = transcript ?? '';
+		transcriptEditing = true;
+	}
+	function commitTranscript() {
+		if (!transcriptEditing) return;
+		transcriptEditing = false;
+		if (transcriptDraft !== (transcript ?? '')) {
+			transcript = transcriptDraft;
+		}
+	}
+	function cancelTranscript() {
+		transcriptEditing = false;
+	}
 
 	let startingRecording = $state(false);
 	let isRecording = $state(false);
@@ -114,6 +138,7 @@
 		} else {
 			apiServerFilePath = serverFilePath; // will trigger fetch
 		}
+		serverPopoverOpen = false;
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -145,23 +170,76 @@
 			Browse...
 			<input type="file" onchange={handleFileSelect} />
 		</label>
+
+		<!-- Server file (popover) -->
+		<div class="server-file-anchor">
+			<button onclick={() => (serverPopoverOpen = !serverPopoverOpen)}>Server...</button>
+			{#if serverPopoverOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="server-popover-backdrop"
+					onclick={(e) => {
+						e.stopPropagation();
+						serverPopoverOpen = false;
+					}}
+				></div>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="server-popover" onclick={(e) => e.stopPropagation()}>
+					<label for="server-file-input">Server file:</label>
+					<div class="server-file-controls">
+						<input
+							id="server-file-input"
+							type="text"
+							bind:value={serverFilePath}
+							onkeydown={handleKeydown}
+							{@attach (el: HTMLInputElement) => {
+								el.focus();
+								el.select();
+							}}
+						/>
+						<button onclick={setServerFilePath}>Set</button>
+					</div>
+					{#if apiServerFilePath instanceof Error}
+						<span class="error">{apiServerFilePath.message}</span>
+					{/if}
+				</div>
+			{/if}
+		</div>
 	</div>
 
-	<!-- Server file -->
-	<div class="server-file">
-		<label for="server-file-input">Server file:</label>
-		<div class="server-file-controls">
+	<!-- Transcript -->
+	<div class="transcript-row">
+		{#if transcriptEditing}
 			<input
-				id="server-file-input"
+				class="transcript-input"
 				type="text"
-				bind:value={serverFilePath}
-				onkeydown={handleKeydown}
+				placeholder="Transcript"
+				bind:value={transcriptDraft}
+				onblur={commitTranscript}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') commitTranscript();
+					else if (e.key === 'Escape') cancelTranscript();
+				}}
+				{@attach (el: HTMLInputElement) => {
+					el.focus();
+					el.select();
+				}}
 			/>
-			<button onclick={setServerFilePath}>Set</button>
-		</div>
-		{#if apiServerFilePath instanceof Error}
-			<span class="error">{apiServerFilePath.message}</span>
+		{:else}
+			<span class="transcript-text" class:empty={!transcript}>
+				{transcript || 'No transcript'}
+			</span>
 		{/if}
+		<button
+			class="transcript-edit-button"
+			title="Edit transcript"
+			onclick={() => (transcriptEditing ? commitTranscript() : startEditTranscript())}
+		>
+			<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M12 20h9" />
+				<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+			</svg>
+		</button>
 	</div>
 </div>
 
@@ -173,9 +251,86 @@
 	}
 
 	.button-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
+		display: flex;
+		flex-wrap: wrap;
 		gap: 0.5em;
+	}
+	.button-row > :global(*) {
+		flex: 1 1 auto;
+	}
+
+	.server-file-anchor {
+		position: relative;
+		display: flex;
+	}
+	.server-file-anchor > button {
+		flex: 1;
+	}
+
+	.server-popover-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 99;
+	}
+
+	.server-popover {
+		position: absolute;
+		top: calc(100% + 4px);
+		right: 0;
+		z-index: 100;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25em;
+		min-width: 260px;
+		padding: 0.6em;
+		background: var(--surface-color, #fff);
+		border: 1px solid var(--border-color, #e5e7eb);
+		border-radius: 6px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+	}
+
+	.transcript-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5em;
+		min-height: 1.8em;
+	}
+	.transcript-text {
+		flex: 1;
+		min-width: 0;
+		font-size: 0.95rem;
+		color: var(--foreground-color);
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+	.transcript-text.empty {
+		opacity: 0.5;
+		font-style: italic;
+	}
+	.transcript-input {
+		flex: 1;
+		padding: 0.25rem 0.4rem;
+		border: 1px solid var(--border-color);
+		border-radius: 4px;
+		background-color: var(--surface-color);
+		color: var(--foreground-color);
+		font-family: var(--font-family-sans-serif);
+		font-size: 0.95rem;
+	}
+	.transcript-edit-button {
+		padding: 0.2em 0.35em;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--surface-color);
+		border: 1px solid var(--border-color);
+		border-radius: 4px;
+		cursor: pointer;
+		opacity: 0.6;
+	}
+	.transcript-edit-button:hover {
+		opacity: 1;
+		background-color: var(--background-color);
 	}
 
 	button,

@@ -11,6 +11,7 @@ interface AudioTrack {
 	keys: string[];
 	data?: Blob;
 	textgrid?: TextGridData;
+	transcript?: string;
 }
 
 const db = new Dexie('AudioDatabase') as Dexie & {

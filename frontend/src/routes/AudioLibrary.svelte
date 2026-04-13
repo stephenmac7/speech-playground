@@ -9,7 +9,11 @@
 	import { db, type TextGridData } from '$lib/db';
 	import { liveQuery } from 'dexie';
 
-	export type TrackData = { data: Blob | null; textgrid: TextGridData | null };
+	export type TrackData = {
+		data: Blob | null;
+		textgrid: TextGridData | null;
+		transcript: string | null;
+	};
 
 	let {
 		requestedTracks,
@@ -69,7 +73,8 @@
 			const track = $tracks.find((t) => t.keys?.includes(key));
 			newTracksByKey[key] = {
 				data: track?.data ?? null,
-				textgrid: track?.textgrid ?? null
+				textgrid: track?.textgrid ?? null,
+				transcript: track?.transcript ?? null
 			};
 		});
 		tracksByKey = newTracksByKey;
@@ -93,8 +98,30 @@
 		db.audio_tracks.update(id, { data: blob });
 	}
 
+	function transcriptFromTextgrid(tg: TextGridData): string | undefined {
+		const tierName = Object.keys(tg).find((k) => k.toLowerCase() === 'text');
+		if (!tierName) return undefined;
+		const text = tg[tierName]
+			.map((iv) => iv.content.trim())
+			.filter((s) => s.length > 0)
+			.join(' ')
+			.trim();
+		return text || undefined;
+	}
+
 	function updateTrackTextgrid(id: number, textgrid: TextGridData | undefined) {
-		db.audio_tracks.update(id, { textgrid });
+		const update: Partial<{ textgrid: TextGridData | undefined; transcript: string }> = {
+			textgrid
+		};
+		if (textgrid) {
+			const t = transcriptFromTextgrid(textgrid);
+			if (t) update.transcript = t;
+		}
+		db.audio_tracks.update(id, update);
+	}
+
+	function updateTrackTranscript(id: number, transcript: string | undefined) {
+		db.audio_tracks.update(id, { transcript });
 	}
 
 	function openTextGridPicker(trackId: number) {
@@ -108,7 +135,7 @@
 			formData.append('file', file);
 			try {
 				const tg = await postJson<TextGridData>('/api/parse_tg', formData);
-				db.audio_tracks.update(trackId, { textgrid: tg });
+				updateTrackTextgrid(trackId, tg);
 			} catch (e) {
 				reportError('Error parsing TextGrid file.', e);
 			}
@@ -260,6 +287,10 @@
 					() => track.textgrid,
 					(tg) => updateTrackTextgrid(track.id, tg)
 				}
+				bind:transcript={
+					() => track.transcript,
+					(t) => updateTrackTranscript(track.id, t)
+				}
 			/>
 		</fieldset>
 	{/each}
@@ -308,13 +339,16 @@
 	.track {
 		position: relative;
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: 1fr 2fr;
 		gap: 1em;
 		border: 1px solid var(--border-color);
 		background-color: var(--surface-color);
 		border-radius: 4px;
 		padding: 1em;
 		align-items: center;
+	}
+	.track > :global(*) {
+		min-width: 0;
 	}
 	.track.selecting {
 		cursor: pointer;
