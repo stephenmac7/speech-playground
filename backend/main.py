@@ -189,14 +189,30 @@ def data_endpoint(filename: str):
     return streaming_response_of_audio_file(path, apply_vad=False)
 
 
+def _load_encoder(encoder: str):
+    model = MODELS_MAP.get(encoder)
+    if model is None:
+        raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
+    return model
+
+
+def encoded_audio_single(
+    encoder: str = Form(...),
+    file: UploadFile = File(...),
+):
+    model = _load_encoder(encoder)
+    target_sr = model.load().sample_rate
+    wav = AudioDecoder(file.file.read(), sample_rate=target_sr).get_all_samples().data.mean(dim=0)
+    x = model.encode(wav)
+    return model, x
+
+
 def encoded_audio_for_comparison(
     encoder: str = Form(...),
     file: UploadFile = File(...),
     model_file: UploadFile = File(...),
 ):
-    model = MODELS_MAP.get(encoder)
-    if model is None:
-        raise HTTPException(status_code=400, detail=f"Unknown encoder '{encoder}'.")
+    model = _load_encoder(encoder)
 
     target_sr = model.load().sample_rate
     xwav = AudioDecoder(model_file.file.read(), sample_rate=target_sr).get_all_samples().data.mean(dim=0)
@@ -206,6 +222,39 @@ def encoded_audio_for_comparison(
     y = model.encode(ywav)
 
     return model, x, y
+
+
+@app.post("/analyze")
+def analyze_endpoint(
+    audio_data: tuple = Depends(encoded_audio_single),
+    discretizer: Optional[str] = Form(None),
+    dpdp: bool = Form(False),
+    gamma: Optional[float] = Form(None),
+    discretize: bool = Form(False),
+):
+    model, x = audio_data
+
+    if discretize and dpdp and gamma is not None:
+        from speech_playground.tokenizer.dpdp import DPDPTokenizer
+
+        x_cont = model.to_continuous_features(x)
+        cluster_centers = model.cluster_centers(discretizer)
+        tokenizer = DPDPTokenizer(cluster_centers=cluster_centers, gamma=gamma)
+        _, xboundaries = tokenizer.tokenize_one(x_cont)
+        segments = [
+            [xboundaries[i] * model.frame_duration, xboundaries[i + 1] * model.frame_duration]
+            for i in range(len(xboundaries) - 1)
+        ]
+    else:
+        segments = model.get_segments(x)
+        if discretize and discretizer is not None:
+            _ = model.discretize(x, discretizer)
+
+    extra: dict = {}
+    if hasattr(model, "extra_results"):
+        extra = model.extra_results(x)
+
+    return {"learnerSegments": segments, **extra}
 
 
 @app.post("/compare")
@@ -223,7 +272,9 @@ def compare_endpoint(
     y_segments = model.get_segments(y)
 
     if hasattr(model, "extra_results"):
-        extra_results = model.extra_results(x, y)
+        x_extra = model.extra_results(x)
+        y_extra = model.extra_results(y)
+        extra_results = {k: [x_extra[k], y_extra[k]] for k in x_extra}
     else:
         extra_results = {}
 

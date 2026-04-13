@@ -368,12 +368,6 @@
 		display: none;
 	}
 
-	.server-file {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25em;
-	}
-
 	.server-file-controls {
 		display: flex;
 		gap: 0.5em;

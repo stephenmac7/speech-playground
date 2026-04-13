@@ -1,17 +1,40 @@
 <script lang="ts">
 	import Diff from './Diff.svelte';
-	import KeepAlive from './KeepAlive.svelte';
+	import Analysis from './Analysis.svelte';
 	import AudioLibrary from './AudioLibrary.svelte';
+	import { getJson } from '$lib/api';
+	import { reportError } from '$lib/errors';
+	import type { ModelsResponse, EncoderConfig } from '$lib/types';
 
-	let tools = $state(['diff']);
-
-	const toolOptions = [
-		{ id: 'diff', label: 'Diff' }
-	];
-
-	let requestedTracks = $derived(tools.includes('diff') ? ['Model', 'Audio'] : ['Audio']);
-
+	let mode = $state<'analysis' | 'diff'>('diff');
 	let tracks: Record<string, import('./AudioLibrary.svelte').TrackData> = $state({});
+	let modelsConfig = $state<ModelsResponse | undefined>();
+	let encoderConfig = $state<EncoderConfig>({
+		encoder: 'wavlm-base-plus',
+		discretize: false,
+		discretizer: 'bshall',
+		dpdp: true,
+		gamma: '0.2'
+	});
+
+	let requestedTracks = $derived(mode === 'diff' ? ['Model', 'Audio'] : ['Audio']);
+
+	$effect(() => {
+		const controller = new AbortController();
+		(async () => {
+			try {
+				const config = await getJson<ModelsResponse>(`/api/models`, controller.signal);
+				if (!config.encoders.some((o) => o.value === encoderConfig.encoder) && config.encoders.length) {
+					encoderConfig.encoder = config.encoders[0].value;
+				}
+				modelsConfig = config;
+			} catch (e: unknown) {
+				if ((e as { name?: string })?.name !== 'AbortError')
+					reportError('Error fetching encoders.', e);
+			}
+		})();
+		return () => controller.abort();
+	});
 </script>
 
 <div class="app-container">
@@ -19,23 +42,26 @@
 		<div class="header-content">
 			<h1>Speech Playground</h1>
 			<nav class="tool-selection">
-				<span>Tools:</span>
-				{#each toolOptions as option (option.id)}
-					<label>
-						<input type="checkbox" bind:group={tools} value={option.id} />
-						{option.label}
-					</label>
-				{/each}
+				<label>
+					Mode:
+					<select bind:value={mode}>
+						<option value="analysis">Analysis</option>
+						<option value="diff">Diff</option>
+					</select>
+				</label>
 			</nav>
 		</div>
 	</header>
 
 	<main>
 		<div class="tool-display">
-			<KeepAlive active={tools.includes('diff')}>
-				{#if tools.length > 1}<h3>Diff</h3>{/if}
-				<Diff {tracks} active={tools.includes('diff')} />
-			</KeepAlive>
+			{#if modelsConfig}
+				{#if mode === 'analysis'}
+					<Analysis {tracks} {modelsConfig} bind:encoderConfig />
+				{:else}
+					<Diff {tracks} {modelsConfig} bind:encoderConfig />
+				{/if}
+			{/if}
 		</div>
 
 		<aside>

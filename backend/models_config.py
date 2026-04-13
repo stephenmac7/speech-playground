@@ -340,11 +340,10 @@ class InversionMetadata(ModelMetadata):
     def encode(self, waveform: torch.Tensor):
         return self.load().encode_one(waveform).cpu().numpy()
 
-    def extra_results(self, x, y):
+    def extra_results(self, x):
         model = self.load()
         x_norm = x[:, :12] * model.std + model.mu
-        y_norm = y[:, :12] * model.std + model.mu
-        return {"articulatoryFeatures": [x_norm.tolist(), y_norm.tolist()]}
+        return {"articulatoryFeatures": x_norm.tolist()}
 
     @property
     def has_fixed_frame_rate(self) -> bool:

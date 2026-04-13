@@ -1,6 +1,6 @@
 <script lang="ts">
 	import SampleViewer from './SampleViewer.svelte';
-	import { postBlob, postJson, getJson } from '$lib/api';
+	import { postBlob, postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
 	import {
 		buildContinuousRegions,
@@ -11,42 +11,27 @@
 	} from '$lib/regions';
 	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
-
-	// ---------- Types & helpers ----------
-	// Encoder config from backend (simplified flat lists)
-	type EncoderOption = {
-		value: string;
-		label: string;
-		discretizers: Array<string>;
-		default_dist_method: string;
-		has_fixed_frame_rate: boolean;
-		supports_dpdp: boolean;
-	};
-	type VoiceModelOption = { value: string; label: string };
-
-	type ModelsResponse = {
-		encoders: Array<EncoderOption>;
-		vc_models: Array<VoiceModelOption>;
-	};
+	import EncoderFieldset from '$lib/EncoderFieldset.svelte';
+	import type { ModelsResponse, EncoderConfig } from '$lib/types';
 
 	// ---------- Props ----------
 	let {
 		tracks,
-		active
+		modelsConfig,
+		encoderConfig = $bindable()
 	}: {
 		tracks: Record<string, import('./AudioLibrary.svelte').TrackData>;
-		active: boolean;
+		modelsConfig: ModelsResponse;
+		encoderConfig: EncoderConfig;
 	} = $props();
 
-	// ---------- Base audio state ----------
-	let audio = $state<Blob | undefined>();
-	let modelAudio = $state<Blob | undefined>();
-	$effect(() => {
-		if (active || audio === undefined || modelAudio === undefined) {
-			audio = tracks['Audio']?.data ?? undefined;
-			modelAudio = tracks['Model']?.data ?? undefined;
-		}
-	});
+	const audio = $derived(tracks['Audio']?.data ?? undefined);
+	const modelAudio = $derived(tracks['Model']?.data ?? undefined);
+
+	const vcModelOptions = $derived(modelsConfig.vc_models);
+	const selectedEncoderOption = $derived(
+		modelsConfig.encoders.find((o) => o.value === encoderConfig.encoder)
+	);
 
 	// ---------- TextGrid tiers ----------
 	function textgridTiersForKey(key: string): Tier[] {
@@ -78,17 +63,7 @@
 	let modelViewer: SampleViewer | undefined = $state();
 	let learnerViewer: SampleViewer | undefined = $state();
 
-	// Dynamic encoder options (fetched from backend)
-	let encoderOptions = $state<EncoderOption[]>([]);
-	let vcModelOptions = $state<VoiceModelOption[]>([]);
-
-	// Fixed-rate diff
-	let encoder = $state('wavlm-base-plus');
-	let discretize = $state(false);
-	let discretizer = $state('bshall');
 	let combineRegions = $state(false);
-	let dpdp = $state(true);
-	let gamma = $state('0.2');
 	let alignment_mode = $state('global');
 	let scores = $state<number[]>([]);
 	let alignmentMap = $state<number[] | undefined>();
@@ -113,32 +88,20 @@
 
 	let loading = $state(false);
 
-	// Selected encoder capabilities (for UI enable/disable)
-	const selectedEncoderOption = $derived.by(() => encoderOptions.find((o) => o.value === encoder));
-	const supportsDiscretize = $derived.by(() => {
-		// Until list loads, default to true
-		if (!encoderOptions.length || !selectedEncoderOption) return true;
-		return selectedEncoderOption.discretizers.length > 0;
-	});
-	const supportsDpdp = $derived.by(() => {
-		// Until list loads, default to true
-		if (!encoderOptions.length || !selectedEncoderOption) return true;
-		return selectedEncoderOption.supports_dpdp;
-	});
 	const isFixedRateEncoder = $derived(selectedEncoderOption?.has_fixed_frame_rate ?? true);
 	const isSegmentalAlignment = $derived(
-		!discretize &&
+		!encoderConfig.discretize &&
 			(alignment_method === 'segmental' || (alignment_method === 'default' && !isFixedRateEncoder))
 	);
 
 	// ---------- Derived regions ----------
 	const combinedModelData = $derived.by(() => {
 		const showIndividualSegments =
-			!isFixedRateEncoder || (discretize && dpdp) || isSegmentalAlignment;
+			!isFixedRateEncoder || (encoderConfig.discretize && encoderConfig.dpdp) || isSegmentalAlignment;
 
 		if (modelSegments) {
 			const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
-			const isStandardDiscrete = isFixedRateEncoder && discretize && !dpdp;
+			const isStandardDiscrete = isFixedRateEncoder && encoderConfig.discretize && !encoderConfig.dpdp;
 
 			if (isStandardDiscrete && combineRegions) {
 				return buildCombinedModelRegions(modelSegments, coveredIndices);
@@ -165,7 +128,7 @@
 
 	const userRegions = $derived.by(() => {
 		if (learnerSegments) {
-			if (discretize) {
+			if (encoderConfig.discretize) {
 				return buildSegmentRegions(
 					scores,
 					learnerSegments,
@@ -192,57 +155,11 @@
 
 	// Audio to compare (may be converted/reconstructed)
 	let audioForComparison = $derived(
-		convertVoice && encoder !== voiceConversionModel ? convertedAudio : audio
+		convertVoice && encoderConfig.encoder !== voiceConversionModel ? convertedAudio : audio
 	);
 	let modelForComparison = $derived(reconstructModel ? reconstructedAudio : modelAudio);
 
-	// ---------- Effects: check discretizer ----------
-	$effect(() => {
-		if (!selectedEncoderOption) return;
-
-		if (!selectedEncoderOption.discretizers.includes(discretizer)) {
-			discretizer = selectedEncoderOption.discretizers[0];
-		}
-		if (!supportsDiscretize) {
-			discretize = false;
-		}
-		if (!supportsDpdp) {
-			dpdp = false;
-		}
-	});
-
 	// ---------- Effects: comparison fetch ----------
-
-	// Load encoders from backend once when active and options not loaded
-	$effect(() => {
-		const controller = new AbortController();
-
-		(async () => {
-			if (!active) return;
-			if (encoderOptions.length) return;
-			try {
-				const config = await getJson<ModelsResponse>(`/api/models`, controller.signal);
-				encoderOptions = config.encoders;
-				vcModelOptions = config.vc_models;
-
-				// Ensure current selections are valid
-				if (!encoderOptions.some((o) => o.value === encoder) && encoderOptions.length > 0) {
-					encoder = encoderOptions[0].value;
-				}
-				if (
-					!vcModelOptions.some((o) => o.value === voiceConversionModel) &&
-					vcModelOptions.length > 0
-				) {
-					voiceConversionModel = vcModelOptions[0].value;
-				}
-			} catch (e: unknown) {
-				if ((e as { name?: string })?.name !== 'AbortError')
-					reportError('Error fetching encoders.', e);
-			}
-		})();
-
-		return () => controller.abort();
-	});
 	$effect(() => {
 		const controller = new AbortController();
 
@@ -262,7 +179,7 @@
 			formData.append('model_file', modelForComparison, 'model.wav');
 
 			try {
-				formData.append('encoder', encoder);
+				formData.append('encoder', encoderConfig.encoder);
 				let data: {
 					scores: number[];
 					alignmentMap?: number[];
@@ -271,8 +188,8 @@
 					learnerSegments?: number[][];
 					modelSegments?: number[][];
 				};
-				if (discretize) {
-					formData.append('discretizer', discretizer);
+				if (encoderConfig.discretize) {
+					formData.append('discretizer', encoderConfig.discretizer);
 				} else {
 					if (dist_method !== 'default') {
 						formData.append('dist_method', dist_method);
@@ -284,8 +201,8 @@
 						formData.append('alpha', alpha.toString());
 					}
 				}
-				if (discretize && dpdp) {
-					formData.append('gamma', gamma);
+				if (encoderConfig.discretize && encoderConfig.dpdp) {
+					formData.append('gamma', encoderConfig.gamma);
 					formData.append('alignment_mode', alignment_mode);
 					data = await postJson(`/api/compare_dpdp`, formData, controller.signal);
 				} else {
@@ -417,159 +334,65 @@
 	</details> -->
 
 	<div class="controls">
+		<EncoderFieldset {modelsConfig} bind:config={encoderConfig} />
+
 		<fieldset>
 			<legend>Comparison</legend>
-			<label>
-				Encoder:
-				<select
-					bind:value={encoder}
-					onchange={() => {
-						if (!supportsDiscretize) discretize = false;
-						if (!supportsDpdp) dpdp = false;
-					}}
-				>
-					{#if encoderOptions.length}
-						{#each encoderOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					{:else}
-						<!-- Fallback: WavLM Base Plus only until list loads -->
-						<option value="wavlm-base-plus">WavLM Base Plus</option>
-					{/if}
-				</select>
-			</label>
-			<div class="radio-group">
+			{#if !encoderConfig.discretize}
 				<label>
-					<input type="radio" bind:group={discretize} value={false} />
-					Continuous
+					Distance Method:
+					<select bind:value={dist_method}>
+						<option value="default"
+							>Default{selectedEncoderOption
+								? ` (${selectedEncoderOption.default_dist_method})`
+								: ''}</option
+						>
+						<option value="euclidean">Euclidean</option>
+						<option value="cosine">Cosine</option>
+					</select>
 				</label>
-				<label class:disabled={!supportsDiscretize}>
-					<input type="radio" bind:group={discretize} value={true} disabled={!supportsDiscretize} />
-					Discrete
+				<label>
+					Alignment Method:
+					<select bind:value={alignment_method}>
+						<option value="default"
+							>Default{selectedEncoderOption && !isFixedRateEncoder ? ' (Segmental)' : ' (DTW)'}
+						</option>
+						<option value="dtw">DTW</option>
+						<option value="segmental">Segmental</option>
+					</select>
 				</label>
-			</div>
-			<fieldset class="sub-fieldset">
-				{#if discretize}
-					<label>
-						Discretizer:
-						<select bind:value={discretizer}>
-							{#if supportsDiscretize && selectedEncoderOption}
-								{#each selectedEncoderOption.discretizers as opt (opt)}
-									<option value={opt}>{opt}</option>
-								{/each}
-							{:else}
-								<!-- Fallback: bshall only until list loads -->
-								<option value="bshall">bshall</option>
-							{/if}
-						</select>
-					</label>
-					<label>
-						Combine Regions:
-						<input type="checkbox" bind:checked={combineRegions} />
-					</label>
-					<label>
-						Show Score:
-						<input type="checkbox" bind:checked={showScore} />
-					</label>
-					<label>
-						Alignment Mode:
-						<select bind:value={alignment_mode}>
-							<option value="global">Global</option>
-							<option value="semiglobal">Semi-Global</option>
-						</select>
-					</label>
-					<label class="label-with-tooltip" class:disabled={!supportsDpdp}>
-						<span>DPDP:</span>
-						<Tooltip align="left">
-							Dynamic programming method that produces coarser speech units.
-							<br /><br />
-							<i
-								>Word Segmentation on Discovered Phone Units With Dynamic Programming and
-								Self-Supervised Scoring</i
-							>
-							(Herman Kamper).
-							<a
-								href="https://doi.org/10.1109/TASLP.2022.3229264"
-								target="_blank"
-								rel="noopener noreferrer"
-							>
-								doi:10.1109/TASLP.2022.3229264
-							</a>
-						</Tooltip>
-						<input type="checkbox" bind:checked={dpdp} disabled={!supportsDpdp} />
-					</label>
-					<label class:disabled={!dpdp}>
-						Gamma: <input
-							type="number"
-							bind:value={gamma}
-							min="0.0"
-							max="1.0"
-							step="0.1"
-							class="short-input"
-						/>
-						<input
-							type="range"
-							min="0.0"
-							max="1.0"
-							step="0.01"
-							bind:value={gamma}
-							disabled={!dpdp}
-						/>
-					</label>
-				{:else}
-					<label>
-						Distance Method:
-						<select bind:value={dist_method}>
-							<option value="default"
-								>Default{selectedEncoderOption
-									? ` (${selectedEncoderOption.default_dist_method})`
-									: ''}</option
-							>
-							<option value="euclidean">Euclidean</option>
-							<option value="cosine">Cosine</option>
-						</select>
-					</label>
-					<label>
-						Alignment Method:
-						<select bind:value={alignment_method}>
-							<option value="default"
-								>Default{selectedEncoderOption && !isFixedRateEncoder ? ' (Segmental)' : ' (DTW)'}
-							</option>
-							<option value="dtw">DTW</option>
-							<option value="segmental">Segmental</option>
-						</select>
-					</label>
-					<label>
-						Combine Regions:
-						<input type="checkbox" bind:checked={combineRegions} />
-					</label>
-					<label>
-						Show Score:
-						<input type="checkbox" bind:checked={showScore} />
-					</label>
-					{#if isSegmentalAlignment}
-						<label>
-							Alignment Mode:
-							<select bind:value={alignment_mode}>
-								<option value="global">Global</option>
-								<option value="semiglobal">Semi-Global</option>
-							</select>
-						</label>
-					{/if}
-					<label>
-						Trigger:
-						<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />
-					</label>
-					<label>
-						Custom Alpha:
-						<input type="checkbox" bind:checked={customAlpha} />
-					</label>
-					<label class:disabled={!customAlpha}>
-						Alpha:
-						<input type="number" step="any" bind:value={alpha} disabled={!customAlpha} />
-					</label>
-				{/if}
-			</fieldset>
+			{/if}
+			{#if encoderConfig.discretize || isSegmentalAlignment}
+				<label>
+					Alignment Mode:
+					<select bind:value={alignment_mode}>
+						<option value="global">Global</option>
+						<option value="semiglobal">Semi-Global</option>
+					</select>
+				</label>
+			{/if}
+			<label>
+				Combine Regions:
+				<input type="checkbox" bind:checked={combineRegions} />
+			</label>
+			<label>
+				Show Score:
+				<input type="checkbox" bind:checked={showScore} />
+			</label>
+			{#if !encoderConfig.discretize}
+				<label>
+					Trigger:
+					<input type="range" min="0.0" max="1.0" step="0.05" bind:value={trigger} />
+				</label>
+				<label>
+					Custom Alpha:
+					<input type="checkbox" bind:checked={customAlpha} />
+				</label>
+				<label class:disabled={!customAlpha}>
+					Alpha:
+					<input type="number" step="any" bind:value={alpha} disabled={!customAlpha} />
+				</label>
+			{/if}
 		</fieldset>
 
 		<fieldset>
@@ -586,14 +409,9 @@
 			<label>
 				Model:
 				<select bind:value={voiceConversionModel}>
-					{#if vcModelOptions.length}
-						{#each vcModelOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					{:else}
-						<!-- Fallback: Kanade 25 Hz only until list loads -->
-						<option value="kanade-25hz">Kanade 25 Hz</option>
-					{/if}
+					{#each vcModelOptions as opt (opt.value)}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
 				</select>
 			</label>
 		</fieldset>
@@ -623,18 +441,10 @@
 		padding: 1rem;
 		background-color: var(--surface-color);
 	}
-	.sub-fieldset {
-		padding: 0.5rem;
-		border-style: dashed;
-	}
 	label {
 		display: flex;
 		align-items: center;
 		gap: 0.5em;
-	}
-	.radio-group {
-		display: flex;
-		gap: 1rem;
 	}
 	select {
 		padding: 0.5rem;
@@ -668,14 +478,9 @@
 		margin: 0;
 	}
 
-	.legend-with-tooltip,
-	.label-with-tooltip {
+	.legend-with-tooltip {
 		display: flex;
 		align-items: center;
 		gap: 0.5em;
-	}
-
-	.short-input {
-		width: 4em;
 	}
 </style>

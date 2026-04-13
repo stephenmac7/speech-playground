@@ -13,6 +13,16 @@ export type Tier = {
 	regions: Region[];
 };
 
+export function buildNeutralSegmentRegions(segments: number[][]): Region[] {
+	return segments.map((segment, i) => ({
+		id: `segment-${i}`,
+		start: segment[0],
+		end: segment[1],
+		content: i.toString(),
+		color: 'rgba(100, 150, 200, 0.25)'
+	}));
+}
+
 export function buildContinuousRegions(
 	allScores: number[],
 	segments: number[][],
