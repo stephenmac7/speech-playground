@@ -42,7 +42,3 @@ class Sylber2ContentEncoder:
     @property
     def sample_rate(self) -> int:
         return 16000
-
-    @property
-    def frame_shift(self) -> float:
-        return 0.02  # WavLM uses 20ms frames

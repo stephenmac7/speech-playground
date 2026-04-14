@@ -506,6 +506,49 @@ class SyllableLMMetadata(ModelMetadata):
         return self.load().cluster_centers
 
 
+class ZeroSylMetadata(ModelMetadata):
+    def __init__(self, *, checkpoint_path: Optional[str] = None):
+        self.checkpoint_path = checkpoint_path
+
+    @property
+    def slug(self) -> str:
+        return "zerosyl"
+
+    @property
+    def name(self) -> str:
+        return "ZeroSyl"
+
+    @lru_cache()
+    def load(self):
+        from speech_playground.encoder.zerosyl import ZeroSylEncoder
+
+        return ZeroSylEncoder(checkpoint_path=self.checkpoint_path)
+
+    def discretizers(self):
+        return []
+
+    def encode(self, waveform: torch.Tensor):
+        return self.load().encode_one(waveform)
+
+    def to_continuous_features(self, encoded):
+        return encoded["segment_features"].cpu().numpy()
+
+    @property
+    def frame_duration(self) -> Optional[float]:
+        return None
+
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return False
+
+    def get_segments(self, encoded):
+        return encoded["segments"].tolist()
+
+    @property
+    def cosine_alpha(self):
+        return 6.0
+
+
 SYLBER_MODELS = [SylberV1Metadata()]
 sylber2_checkpoint_path = os.getenv("SYLBER2_CHECKPOINT_PATH")
 if sylber2_checkpoint_path is not None:
@@ -520,6 +563,7 @@ MODELS = [
     ),
     HubertMetadata(),
     *SYLBER_MODELS,
+    ZeroSylMetadata(checkpoint_path=os.getenv("ZEROSYL_CHECKPOINT_PATH")),
     *(KanadeMetadata(variant=model["variant"], name=model["name"]) for model in KANADE_MODELS),
 ]
 if INVERSION_TOP is not None:

@@ -26,6 +26,7 @@ kanade = [
 ]
 dpdp = ["numba"]
 sylber = ["sylber", "traitlets"]
+zerosyl = ["zerosyl>=1.0.5"]
 inversion = [
     "loralib",
     "transformers",
