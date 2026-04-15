@@ -6,7 +6,10 @@ Run with panphon injected ad-hoc:
     uv run --with panphon python scripts/train_phonological_vectors.py \
         --timit-root /path/to/TIMIT
 
-Writes an ``.npz`` with ``pos_vecs, zero_vecs, scales, biases, featnames, model_name``.
+Writes an ``.npz`` containing three phonological-vector banks (current phone
+``ipa_*``, previous phone ``l1_*``, next phone ``r1_*``), two cross-space
+linear maps (``W_r1_to_ipa``, ``W_l1_to_ipa``), and a logistic-regression
+silence detector (``silence_coef``, ``silence_intercept``).
 """
 import argparse
 import os
@@ -17,6 +20,7 @@ import pandas as pd
 import panphon
 import soundfile as sf
 import torch
+from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 from transformers import Wav2Vec2FeatureExtractor, WavLMModel
 
@@ -114,15 +118,20 @@ def build_feature_cache(
     pairs: list[tuple[Path, Path]],
     model_name: str,
     device: torch.device,
-) -> tuple[list[str], np.ndarray]:
+) -> tuple[list[str], list[str | None], list[str | None], np.ndarray, np.ndarray]:
     processor = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
     model = WavLMModel.from_pretrained(model_name).to(device).eval()
 
     stride = 320  # WavLM CNN stride @ 16kHz => 20ms frames
     ipas: list[str] = []
+    l1s: list[str | None] = []
+    r1s: list[str | None] = []
     feats: list[np.ndarray] = []
+    audio_path_ids: list[int] = []
 
-    for wav_path, phn_path in tqdm(pairs, desc="Extracting features"):
+    for path_id, (wav_path, phn_path) in enumerate(
+        tqdm(pairs, desc="Extracting features")
+    ):
         rows = read_phn(phn_path)
         if not rows:
             continue
@@ -144,16 +153,32 @@ def build_feature_cache(
             else:
                 merged.append((start, stop, phn))
 
+        utt_ipas: list[str] = []
+        utt_feats: list[np.ndarray] = []
         for start, stop, phn in merged:
             ipa = TIMIT_TO_IPA.get(phn)
             if ipa is None:
                 continue
             center_sample = (start + stop) // 2
             frame = min(max(center_sample // stride, 0), T - 1)
-            ipas.append(ipa)
-            feats.append(hidden[frame])
+            utt_ipas.append(ipa)
+            utt_feats.append(hidden[frame])
 
-    return ipas, np.stack(feats).astype(np.float32)
+        n = len(utt_ipas)
+        for i in range(n):
+            ipas.append(utt_ipas[i])
+            l1s.append(utt_ipas[i - 1] if i > 0 else None)
+            r1s.append(utt_ipas[i + 1] if i < n - 1 else None)
+            feats.append(utt_feats[i])
+            audio_path_ids.append(path_id)
+
+    return (
+        ipas,
+        l1s,
+        r1s,
+        np.stack(feats).astype(np.float32),
+        np.asarray(audio_path_ids, dtype=np.int32),
+    )
 
 
 class PhonologicalVectors:
@@ -189,9 +214,11 @@ class PhonologicalVectors:
         self.in_dim = len(df[~df.feat.isna()].iloc[0].feat)
         for featname in self.featnames:
             pos_phns, zero_phns = self.split_phns(featname)
-            if len(pos_phns) > 0 and len(zero_phns) > 0:
-                pos = np.stack(df[df[group_col].isin(pos_phns)].feat.tolist())
-                zero = np.stack(df[df[group_col].isin(zero_phns)].feat.tolist())
+            pos_rows = df[df[group_col].isin(pos_phns)]
+            zero_rows = df[df[group_col].isin(zero_phns)]
+            if len(pos_rows) > 0 and len(zero_rows) > 0:
+                pos = np.stack(pos_rows.feat.tolist())
+                zero = np.stack(zero_rows.feat.tolist())
                 pv = pos.mean(0)
                 zv = zero.mean(0)
                 w = pv - zv
@@ -238,6 +265,10 @@ class PhonologicalVectors:
         if filter_features:
             self._filter_features()
 
+    def project_raw(self, feats):
+        W = self.pos_vecs - self.zero_vecs
+        return (feats @ W.T + self.biases[None, :]) * self.scales[None, :]
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -257,29 +288,88 @@ def main():
         print(f"Loading cached features from {args.feature_cache}")
         cached = np.load(args.feature_cache, allow_pickle=False)
         ipas = [str(s) for s in cached["ipas"]]
+        l1s = [str(s) if s else None for s in cached["l1s"]]
+        r1s = [str(s) if s else None for s in cached["r1s"]]
         feats = cached["feats"]
+        audio_path_ids = cached["audio_path_ids"]
     else:
         pairs = find_timit_pairs(args.timit_root)
         if not pairs:
             raise SystemExit(f"No .WAV/.PHN pairs found under {args.timit_root}")
         print(f"Found {len(pairs)} utterances")
-        ipas, feats = build_feature_cache(pairs, args.model, torch.device(args.device))
-        np.savez(args.feature_cache, ipas=np.array(ipas), feats=feats)
+        ipas, l1s, r1s, feats, audio_path_ids = build_feature_cache(
+            pairs, args.model, torch.device(args.device)
+        )
+        np.savez(
+            args.feature_cache,
+            ipas=np.array(ipas),
+            l1s=np.array(["" if s is None else s for s in l1s]),
+            r1s=np.array(["" if s is None else s for s in r1s]),
+            feats=feats,
+            audio_path_ids=audio_path_ids,
+        )
         print(f"Cached {len(ipas)} phones to {args.feature_cache}")
 
-    df = pd.DataFrame({"ipa": ipas, "feat": list(feats)})
-    df = df[df.ipa.notna()]
-    vocab = df.ipa.unique().tolist()
-    pv = PhonologicalVectors(df, vocab=vocab, group_col="ipa")
+    df = pd.DataFrame({
+        "ipa": ipas,
+        "l_1": l1s,
+        "r_1": r1s,
+        "feat": list(feats),
+        "audio_path": audio_path_ids,
+    })
+    df["__idx"] = np.arange(len(df))
+    vocab = [v for v in df.ipa.dropna().unique().tolist()]
 
-    print(f"Kept {len(pv.featnames)} features: {pv.featnames}")
+    pv_ipa = PhonologicalVectors(df, vocab=vocab, group_col="ipa")
+    pv_l1 = PhonologicalVectors(df, vocab=vocab, group_col="l_1")
+    pv_r1 = PhonologicalVectors(df, vocab=vocab, group_col="r_1")
+    assert (
+        pv_ipa.featnames == pv_l1.featnames == pv_r1.featnames
+    ), "Feature name mismatch across pv_ipa / pv_l1 / pv_r1"
+    print(f"Kept {len(pv_ipa.featnames)} features: {pv_ipa.featnames}")
+
+    # Cross-position linear maps.
+    df_sorted = df.sort_values(["audio_path", "__idx"])
+    ap = df_sorted.audio_path.values
+    same_utt = ap[:-1] == ap[1:]
+    feat_arr = np.stack(df_sorted.feat.values)
+    prev_feats = feat_arr[:-1][same_utt]
+    curr_feats = feat_arr[1:][same_utt]
+
+    proj_ipa_curr = pv_ipa.project_raw(curr_feats)
+    proj_ipa_prev = pv_ipa.project_raw(prev_feats)
+    proj_r1_prev = pv_r1.project_raw(prev_feats)
+    proj_l1_next = pv_l1.project_raw(curr_feats)
+
+    W_r1_to_ipa = np.linalg.lstsq(proj_r1_prev, proj_ipa_curr, rcond=None)[0]
+    W_l1_to_ipa = np.linalg.lstsq(proj_l1_next, proj_ipa_prev, rcond=None)[0]
+
+    # Silence detector.
+    labels = np.array([i == "_" for i in ipas])
+    lr = LogisticRegression(max_iter=1000).fit(feats, labels)
+    silence_coef = lr.coef_[0].astype(np.float32)
+    silence_intercept = np.float32(lr.intercept_[0])
+    print(f"Silence detector train accuracy: {lr.score(feats, labels):.4f}")
+
     np.savez(
         args.output,
-        pos_vecs=pv.pos_vecs.astype(np.float32),
-        zero_vecs=pv.zero_vecs.astype(np.float32),
-        scales=pv.scales.astype(np.float32),
-        biases=pv.biases.astype(np.float32),
-        featnames=np.array(pv.featnames),
+        ipa_pos_vecs=pv_ipa.pos_vecs.astype(np.float32),
+        ipa_zero_vecs=pv_ipa.zero_vecs.astype(np.float32),
+        ipa_scales=pv_ipa.scales.astype(np.float32),
+        ipa_biases=pv_ipa.biases.astype(np.float32),
+        ipa_featnames=np.array(pv_ipa.featnames),
+        l1_pos_vecs=pv_l1.pos_vecs.astype(np.float32),
+        l1_zero_vecs=pv_l1.zero_vecs.astype(np.float32),
+        l1_scales=pv_l1.scales.astype(np.float32),
+        l1_biases=pv_l1.biases.astype(np.float32),
+        r1_pos_vecs=pv_r1.pos_vecs.astype(np.float32),
+        r1_zero_vecs=pv_r1.zero_vecs.astype(np.float32),
+        r1_scales=pv_r1.scales.astype(np.float32),
+        r1_biases=pv_r1.biases.astype(np.float32),
+        W_r1_to_ipa=W_r1_to_ipa.astype(np.float32),
+        W_l1_to_ipa=W_l1_to_ipa.astype(np.float32),
+        silence_coef=silence_coef,
+        silence_intercept=silence_intercept,
         model_name=np.array(args.model),
     )
     print(f"Wrote {args.output}")

@@ -77,6 +77,7 @@
 	// Track Shift key globally so drag handlers can read the state reliably
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Shift') shiftDown = true;
+		if (e.key === 'Escape' && tierMenuOpen) closeTierMenu();
 	}
 	function handleKeyup(e: KeyboardEvent) {
 		if (e.key === 'Shift') shiftDown = false;
@@ -693,16 +694,18 @@
 				{#each visibleTiers as tier, i (tier)}
 					<div class="tier-label-row">
 						{#if i === 0}
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div
+							<button
+								type="button"
 								class="tier-menu-toggle"
+								aria-label="Toggle tiers"
+								aria-expanded={tierMenuOpen}
 								onclick={() => (tierMenuOpen = !tierMenuOpen)}
 							>
 								<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
-									<title>Toggle tiers</title>
 									<path d="M4 6l4 4 4-4z" />
 								</svg>
 					{#if tierMenuOpen}
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 						class="tier-menu-backdrop"
@@ -712,6 +715,7 @@
 						}}
 					></div>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<div class="tier-menu" onclick={(e) => e.stopPropagation()}>
 							{#each textgridTiersWithRegions as tier}
 								{@const isVisible = !hiddenTierNames.has(tier.name!)}
@@ -763,7 +767,7 @@
 							{/each}
 						</div>
 					{/if}
-							</div>
+							</button>
 						{/if}
 						<span class="tier-label-name" title={tier.name}
 							>{stripTierPrefix(tier.name ?? '')}</span
@@ -923,10 +927,22 @@
 		opacity: 0.8;
 	}
 
-	.tier-menu-toggle {
+	.sample-viewer:not(.compact) .tier-menu-toggle,
+	.sample-viewer:not(.compact) .tier-menu-toggle:hover,
+	.sample-viewer.compact .tier-menu-toggle,
+	.sample-viewer.compact .tier-menu-toggle:hover {
 		cursor: pointer;
 		line-height: 0;
 		position: relative;
+		background: none;
+		border: none;
+		border-radius: 0;
+		padding: 0;
+		margin: 0;
+		width: auto;
+		height: auto;
+		color: inherit;
+		display: inline-flex;
 	}
 	.tier-menu-toggle svg {
 		opacity: 0.5;

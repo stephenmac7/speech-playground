@@ -36,7 +36,7 @@ inversion = [
 torch = { index = "pytorch-cu128" }
 torchaudio = { index = "pytorch-cu128" }
 torchcodec = { index = "pytorch-cu128" }
-kanade-tokenizer = {  git = "https://github.com/frothywater/kanade-tokenizer" }
+kanade-tokenizer = { git = "https://github.com/frothywater/kanade-tokenizer" }
 speech-playground = { path = "../lib", editable = true }
 
 [[tool.uv.index]]

@@ -22,11 +22,11 @@ class PhonologicalVectorEncoder(WavLMEncoder):
     ):
         super().__init__(model_name=model_name, layer=layer, device=device)
         data = np.load(weights_path, allow_pickle=False)
-        self.pos_vecs = data["pos_vecs"].astype(np.float32)
-        self.zero_vecs = data["zero_vecs"].astype(np.float32)
-        self.scales = data["scales"].astype(np.float32)
-        self.biases = data["biases"].astype(np.float32)
-        self.featnames = [str(n) for n in data["featnames"]]
+        self.pos_vecs = data["ipa_pos_vecs"].astype(np.float32)
+        self.zero_vecs = data["ipa_zero_vecs"].astype(np.float32)
+        self.scales = data["ipa_scales"].astype(np.float32)
+        self.biases = data["ipa_biases"].astype(np.float32)
+        self.featnames = [str(n) for n in data["ipa_featnames"]]
         self.W = self.pos_vecs - self.zero_vecs  # (F, 1024)
 
     def project_raw(self, feats: np.ndarray) -> np.ndarray:

@@ -14,15 +14,6 @@ def get_encoder(args):
         from speech_playground.encoder.wavlm import WavLMLargeL6Encoder
 
         return WavLMLargeL6Encoder()
-    elif args.encoder in ["wavlm-l69", "wavlm-l69-reconstruction"]:
-        from speech_playground.encoder.kanade import KanadeWavLMEncoder
-
-        output_key = "ssl_real" if args.encoder == "wavlm-l69" else "ssl_recon"
-        return KanadeWavLMEncoder(
-            config_path="/home/smcintosh/kanade-tokenizer/config/model/25hz.yaml",
-            weights_path="/home/smcintosh/kanade-tokenizer/weights/25hz_with_feature_decoder.safetensors",
-            return_only=output_key,
-        )
     else:
         # try to load from models_config -- add to python path from parent directory
         import sys

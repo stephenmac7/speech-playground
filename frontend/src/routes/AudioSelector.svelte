@@ -146,7 +146,13 @@
 			setServerFilePath();
 		}
 	}
+
+	function handleWindowKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && serverPopoverOpen) serverPopoverOpen = false;
+	}
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class="audio-selector">
 	<div class="button-row">
@@ -175,6 +181,7 @@
 		<div class="server-file-anchor">
 			<button onclick={() => (serverPopoverOpen = !serverPopoverOpen)}>Server...</button>
 			{#if serverPopoverOpen}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					class="server-popover-backdrop"
@@ -184,6 +191,7 @@
 					}}
 				></div>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<div class="server-popover" onclick={(e) => e.stopPropagation()}>
 					<label for="server-file-input">Server file:</label>
 					<div class="server-file-controls">
