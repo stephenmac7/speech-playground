@@ -14,6 +14,57 @@ export type Tier = {
 	regions: Region[];
 };
 
+// Memoized sorted-by-start view of a tier's regions, keyed by tier identity.
+const sortedTierCache = new WeakMap<Tier, Region[]>();
+
+function getSortedRegions(tier: Tier): Region[] {
+	let cached = sortedTierCache.get(tier);
+	if (!cached) {
+		cached = [...tier.regions].sort((a, b) => a.start - b.start);
+		sortedTierCache.set(tier, cached);
+	}
+	return cached;
+}
+
+// Returns regions in `tier` whose [start, end] intersects [t0, t1].
+// Uses binary search on sorted start times; a small fixed look-back covers
+// paired-lane regions (e.g. Diff.svelte top/bottom) at the same start.
+export function visibleRegions(tier: Tier, t0: number, t1: number): Region[] {
+	const sorted = getSortedRegions(tier);
+	const n = sorted.length;
+	if (n === 0 || t1 <= t0) return [];
+
+	// Upper bound: first index with start >= t1.
+	let lo = 0;
+	let hi = n;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (sorted[mid].start < t1) lo = mid + 1;
+		else hi = mid;
+	}
+	const upper = lo;
+
+	// Lower bound: first index with start >= t0. Step back 2 to catch (a) the
+	// at-most-one region whose start < t0 but end > t0 (tiers are non-
+	// overlapping, so only one can straddle t0), and (b) a paired-lane sibling
+	// sharing the same start (Diff.svelte top/bottom), which sort may place
+	// just before the binary-search result.
+	lo = 0;
+	hi = upper;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (sorted[mid].start < t0) lo = mid + 1;
+		else hi = mid;
+	}
+	const begin = Math.max(0, lo - 2);
+
+	const out: Region[] = [];
+	for (let i = begin; i < upper; i++) {
+		if (sorted[i].end > t0) out.push(sorted[i]);
+	}
+	return out;
+}
+
 // matplotlib PuOr diverging colormap, 7 stops from -1 to +1.
 const PUOR_STOPS: [number, [number, number, number]][] = [
 	[-1.0, [127, 59, 8]],

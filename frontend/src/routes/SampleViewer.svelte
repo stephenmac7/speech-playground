@@ -1,6 +1,7 @@
 <script lang="ts">
 	import WaveSurfer from 'wavesurfer.js';
 	import { onMount } from 'svelte';
+	import { visibleRegions } from '$lib/regions';
 	import type { Region, Tier } from '$lib/regions';
 	import { postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
@@ -55,6 +56,23 @@
 	let isFitToView = $state(true);
 	let accumulatedDelta = 0;
 	let containerWidth = $state(0);
+	let scrollLeft = $state(0);
+	let scrollRafPending = false;
+
+	const OVERSCAN_SEC = 0.5;
+	let viewStart = $derived(pxPerSec ? scrollLeft / pxPerSec : 0);
+	let viewEnd = $derived(
+		pxPerSec ? (scrollLeft + containerWidth) / pxPerSec : duration
+	);
+
+	function handleScroll() {
+		if (scrollRafPending || !waveformContainer) return;
+		scrollRafPending = true;
+		requestAnimationFrame(() => {
+			scrollRafPending = false;
+			if (waveformContainer) scrollLeft = waveformContainer.scrollLeft;
+		});
+	}
 
 	// Track Shift key globally so drag handlers can read the state reliably
 	function handleKeydown(e: KeyboardEvent) {
@@ -258,6 +276,8 @@
 	function groupTiers(prefix: string): Tier[] {
 		return tiersWithRegions.filter((t) => t.name?.startsWith(prefix));
 	}
+	let canvasRefs: HTMLCanvasElement[] = $state([]);
+
 	let visibleTiers = $derived(
 		tiersWithRegions.filter((t) => {
 			if (hiddenTierNames.has(t.name!)) return false;
@@ -400,7 +420,7 @@
 			waveColor: '#4F4A85',
 			progressColor: '#383351',
 			barWidth: 2,
-			cursorWidth: 2,
+			cursorWidth: 0,
 			height: height,
 			mediaControls: false,
 			backend: 'WebAudio',
@@ -430,7 +450,10 @@
 			}
 		});
 		wavesurfer.on('play', () => (playing = true));
-		wavesurfer.on('pause', () => (playing = false));
+		wavesurfer.on('pause', () => {
+			playing = false;
+			currentTime = wavesurfer.getCurrentTime();
+		});
 		// Enable drag events without dragToSeek (which adds its own conflicting handler).
 		// Wrap setOptions so the drag stream survives option updates (7.12+ cleans it up).
 		// @ts-expect-error private WaveSurfer renderer API
@@ -464,7 +487,8 @@
 				if (!dragStart) wavesurfer.play();
 			});
 		}
-		wavesurfer.on('seeking', () => {
+		wavesurfer.on('seeking', (t) => {
+			if (typeof t === 'number') currentTime = t;
 			playButton?.focus({ preventScroll: true });
 		});
 		wavesurfer.on('click', (relativeX) => {
@@ -504,6 +528,70 @@
 	$effect(() => {
 		if (isFitToView && duration > 0 && containerWidth > 0) {
 			pxPerSec = containerWidth / duration;
+		}
+	});
+
+	$effect(() => {
+		void viewStart;
+		void viewEnd;
+		void pxPerSec;
+		void containerWidth;
+		void duration;
+		const tiers = visibleTiers;
+		if (!duration || !pxPerSec || !containerWidth) return;
+		const dpr = window.devicePixelRatio || 1;
+		const wCss = containerWidth;
+		const hCss = 24;
+		const t0 = viewStart - OVERSCAN_SEC;
+		const t1 = viewEnd + OVERSCAN_SEC;
+		for (let i = 0; i < tiers.length; i++) {
+			const canvas = canvasRefs[i];
+			if (!canvas) continue;
+			const bw = Math.max(1, Math.round(wCss * dpr));
+			const bh = Math.max(1, Math.round(hCss * dpr));
+			if (canvas.width !== bw || canvas.height !== bh) {
+				canvas.width = bw;
+				canvas.height = bh;
+			}
+			const ctx = canvas.getContext('2d');
+			if (!ctx) continue;
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			ctx.clearRect(0, 0, wCss, hCss);
+			const regions = visibleRegions(tiers[i], t0, t1);
+			ctx.font = '12px system-ui, sans-serif';
+			ctx.textBaseline = 'middle';
+			for (const r of regions) {
+				const x = (r.start - viewStart) * pxPerSec;
+				const w = (r.end - r.start) * pxPerSec;
+				let y = 0;
+				let h = hCss;
+				if (r.lane === 'top') {
+					y = 0;
+					h = hCss / 2;
+				} else if (r.lane === 'bottom') {
+					y = hCss / 2;
+					h = hCss / 2;
+				}
+				ctx.fillStyle = r.color ?? 'rgba(255, 255, 197, 0.5)';
+				ctx.fillRect(x, y, w, h);
+				ctx.strokeStyle = '#e5e7eb';
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(x + 0.5, y);
+				ctx.lineTo(x + 0.5, y + h);
+				ctx.moveTo(x + w - 0.5, y);
+				ctx.lineTo(x + w - 0.5, y + h);
+				ctx.stroke();
+				if (r.content && w > 14) {
+					ctx.save();
+					ctx.beginPath();
+					ctx.rect(x + 2, y, w - 4, h);
+					ctx.clip();
+					ctx.fillStyle = '#111';
+					ctx.fillText(r.content, x + 4, y + h / 2);
+					ctx.restore();
+				}
+			}
 		}
 	});
 
@@ -573,6 +661,7 @@
 			bind:this={waveformContainer}
 			bind:clientWidth={containerWidth}
 			onwheel={handleWheel}
+			onscroll={handleScroll}
 		>
 			<div
 				class="scroll-wrapper"
@@ -582,33 +671,21 @@
 					: '100%'}
 			>
 				<div id="wavesurfer" bind:this={node}></div>
-				{#each visibleTiers as tier (tier)}
-					<div class="regions-bar">
+				{#each visibleTiers as tier, i (tier)}
+					<div class="regions-bar" style:width="{duration * pxPerSec}px">
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							class="regions-timeline"
-							style:width="{duration * pxPerSec}px"
+						<canvas
+							bind:this={canvasRefs[i]}
+							class="regions-canvas"
+							style:width="{containerWidth}px"
+							style:height="24px"
 							onmousedown={(e) => handleRegionBarMouseDown(e, tier.regions)}
-						>
-							{#if duration}
-								{#each tier.regions as region (`${region.lane ?? ''}-${region.start}-${region.end}-${region.content ?? ''}`)}
-									<div
-										class="region-under"
-										class:lane-top={region.lane === 'top'}
-										class:lane-bottom={region.lane === 'bottom'}
-										style:left="{region.start * pxPerSec}px"
-										style:width="{(region.end - region.start) * pxPerSec}px"
-										style:background-color={region.color ?? 'rgba(255, 255, 197, 0.5)'}
-									>
-										{#if region.content}
-											<div class="region-content-under">{region.content}</div>
-										{/if}
-									</div>
-								{/each}
-							{/if}
-						</div>
+						></canvas>
 					</div>
 				{/each}
+				{#if duration}
+					<div class="playhead" style:left="{currentTime * pxPerSec}px"></div>
+				{/if}
 			</div>
 		</div>
 		{#if tiersWithRegions.length > 0 || transcript !== undefined}
@@ -786,6 +863,7 @@
 	}
 
 	.scroll-wrapper {
+		position: relative;
 		transform: rotateX(180deg);
 	}
 
@@ -794,42 +872,22 @@
 		height: 24px;
 		background: #f3f4f6;
 		border-top: 1px solid #e5e7eb;
-		overflow: hidden;
 	}
 
-	.regions-timeline {
+	.regions-canvas {
+		position: sticky;
+		left: 0;
+		display: block;
+	}
+
+	.playhead {
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		left: 0;
-	}
-
-	.region-under {
-		position: absolute;
-		top: 0;
-		height: 100%;
-		background-color: rgba(255, 255, 197, 0.5);
-		border-left: 1px solid #e5e7eb;
-		border-right: 1px solid #e5e7eb;
-		box-sizing: border-box;
-		overflow: hidden;
-	}
-	.region-under.lane-top {
-		top: 0;
-		height: 50%;
-	}
-	.region-under.lane-bottom {
-		top: 50%;
-		height: 50%;
-	}
-
-	.region-content-under {
-		padding: 4px;
-		font-size: 12px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		user-select: none;
+		width: 1px;
+		background: var(--playhead-color, #000);
+		pointer-events: none;
+		z-index: 5;
 	}
 
 	.tier-labels {
