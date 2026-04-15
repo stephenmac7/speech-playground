@@ -87,7 +87,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 1rem;
-		max-width: 1800px;
+		max-width: 2100px;
 		margin: 0 auto;
 	}
 
@@ -96,7 +96,7 @@
 		flex-direction: row;
 		gap: 1.5rem;
 		padding: 1rem;
-		max-width: 1800px;
+		max-width: 2100px;
 		margin: 0 auto;
 		width: 100%;
 		flex-grow: 1;

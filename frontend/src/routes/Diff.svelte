@@ -6,6 +6,8 @@
 		buildContinuousRegions,
 		buildSegmentRegions,
 		buildCombinedModelRegions,
+		buildPhonologicalTier,
+		buildPhonologicalTiers,
 		type Region,
 		type Tier
 	} from '$lib/regions';
@@ -73,6 +75,8 @@
 		return alignedTimes.map(([t1, t2]) => [t2, t1]).sort((a, b) => a[0] - b[0]);
 	});
 	let articulatoryFeatures = $state<number[][] | undefined>();
+	let phonologicalActivations = $state<number[][][] | undefined>();
+	let phonologicalFeatureNames = $state<string[][] | undefined>();
 	let learnerSegments = $state<number[][] | undefined>();
 	let modelSegments = $state<number[][] | undefined>();
 	let currentTime = $state(0);
@@ -96,35 +100,110 @@
 
 	// ---------- Derived regions ----------
 	const combinedModelData = $derived.by(() => {
-		const showIndividualSegments =
-			!isFixedRateEncoder || (encoderConfig.discretize && encoderConfig.dpdp) || isSegmentalAlignment;
+		if (!modelSegments) return { regions: [] as Region[], indexMap: undefined };
 
-		if (modelSegments) {
-			const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
-			const isStandardDiscrete = isFixedRateEncoder && encoderConfig.discretize && !encoderConfig.dpdp;
+		const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
+		const isStandardDiscrete = isFixedRateEncoder && encoderConfig.discretize && !encoderConfig.dpdp;
 
-			if (isStandardDiscrete && combineRegions) {
-				return buildCombinedModelRegions(modelSegments, coveredIndices);
-			}
-
-			if (showIndividualSegments || (isStandardDiscrete && !combineRegions)) {
-				return {
-					regions: modelSegments.map((segment, i) => ({
-						id: `model-segment-${i}`,
-						start: segment[0],
-						end: segment[1],
-						content: i.toString(),
-						color: coveredIndices.has(i) ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
-					})),
-					indexMap: undefined
-				};
-			}
+		if (isStandardDiscrete && combineRegions) {
+			return buildCombinedModelRegions(modelSegments, coveredIndices);
 		}
-		return { regions: [] as Region[], indexMap: undefined };
+
+		return {
+			regions: modelSegments.map((segment, i) => ({
+				id: `model-segment-${i}`,
+				start: segment[0],
+				end: segment[1],
+				content: i.toString(),
+				color: coveredIndices.has(i) ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
+			})),
+			indexMap: undefined
+		};
 	});
 
 	const modelRegions = $derived(combinedModelData.regions);
 	const modelIndexMap = $derived(combinedModelData.indexMap);
+
+	const modelPhonologicalTiers = $derived.by<Tier[]>(() => {
+		if (!phonologicalActivations || !phonologicalFeatureNames) return [];
+		return buildPhonologicalTiers(phonologicalActivations[0], phonologicalFeatureNames[0]);
+	});
+
+	const learnerPhonologicalTiers = $derived.by<Tier[]>(() => {
+		if (!phonologicalActivations || !phonologicalFeatureNames) return [];
+		const modelActs = phonologicalActivations[0];
+		const learnerActs = phonologicalActivations[1];
+		const names = phonologicalFeatureNames[1];
+		const map = alignmentMap;
+		const alignedModelActs: number[][] = new Array(learnerActs.length);
+		for (let t = 0; t < learnerActs.length; t++) {
+			const width = learnerActs[t].length;
+			const modelIdx = map?.[t];
+			if (modelIdx === undefined || modelIdx < 0 || modelIdx >= modelActs.length) {
+				alignedModelActs[t] = new Array(width).fill(0);
+			} else {
+				alignedModelActs[t] = modelActs[modelIdx];
+			}
+		}
+
+		const speechIdx = names.indexOf('speech+');
+		const speechMask: boolean[] = new Array(learnerActs.length);
+		for (let t = 0; t < learnerActs.length; t++) {
+			speechMask[t] =
+				speechIdx >= 0
+					? learnerActs[t][speechIdx] > 0 || alignedModelActs[t][speechIdx] > 0
+					: true;
+		}
+
+		const featureOrder: number[] = [];
+		const totalDiffs: number[] = new Array(names.length).fill(0);
+		for (let f = 0; f < names.length; f++) {
+			const n = names[f];
+			if (n.endsWith('-') || n === 'speech+') continue;
+			featureOrder.push(f);
+			let sum = 0;
+			for (let t = 0; t < learnerActs.length; t++) {
+				if (!speechMask[t]) continue;
+				sum += Math.abs(learnerActs[t][f] - alignedModelActs[t][f]);
+			}
+			totalDiffs[f] = sum;
+		}
+		featureOrder.sort((a, b) => totalDiffs[b] - totalDiffs[a]);
+
+		let vrange = 0;
+		for (let t = 0; t < learnerActs.length; t++) {
+			for (let f = 0; f < learnerActs[t].length; f++) {
+				const a = Math.max(Math.abs(learnerActs[t][f]), Math.abs(alignedModelActs[t][f]));
+				if (a > vrange) vrange = a;
+			}
+		}
+		if (vrange === 0) vrange = 1;
+
+		const tiers: Tier[] = [];
+		for (const f of featureOrder) {
+			const name = names[f];
+			const refTier = buildPhonologicalTier(
+				alignedModelActs,
+				f,
+				`phonological:${name}`,
+				0.02,
+				vrange
+			);
+			const learnerTier = buildPhonologicalTier(
+				learnerActs,
+				f,
+				`phonological:${name}`,
+				0.02,
+				vrange
+			);
+			const combined: Region[] = [];
+			for (const r of refTier.regions) combined.push({ ...r, lane: 'top' });
+			for (const r of learnerTier.regions)
+				combined.push({ ...r, id: `${r.id}-learner`, lane: 'bottom' });
+			tiers.push({ name: refTier.name, regions: combined });
+		}
+		return tiers;
+	});
 
 	const userRegions = $derived.by(() => {
 		if (learnerSegments) {
@@ -173,6 +252,8 @@
 			learnerSegments = undefined;
 			modelSegments = undefined;
 			articulatoryFeatures = undefined;
+			phonologicalActivations = undefined;
+			phonologicalFeatureNames = undefined;
 
 			const formData = new FormData();
 			formData.append('file', audioForComparison, 'recording.wav');
@@ -184,6 +265,8 @@
 					scores: number[];
 					alignmentMap?: number[];
 					articulatoryFeatures?: number[][];
+					phonologicalActivations?: number[][][];
+					phonologicalFeatureNames?: string[][];
 					alignedTimes?: number[][];
 					learnerSegments?: number[][];
 					modelSegments?: number[][];
@@ -213,6 +296,8 @@
 				alignmentMap = data.alignmentMap;
 				alignedTimes = data.alignedTimes;
 				articulatoryFeatures = data.articulatoryFeatures;
+				phonologicalActivations = data.phonologicalActivations;
+				phonologicalFeatureNames = data.phonologicalFeatureNames;
 				learnerSegments = data.learnerSegments;
 				modelSegments = data.modelSegments;
 			} catch (e: unknown) {
@@ -288,7 +373,11 @@
 		</div>
 		<SampleViewer
 			audio={reconstructModel ? reconstructedAudio : modelAudio}
-			tiers={[{ name: 'Distance', regions: modelRegions }, ...textgridTiersForKey('Model')]}
+			tiers={[
+				{ name: 'Distance', regions: modelRegions },
+				...textgridTiersForKey('Model'),
+				...modelPhonologicalTiers
+			]}
 			transcript={tracks['Model']?.transcript ?? undefined}
 			bind:this={modelViewer}
 			compareWith={learnerViewer
@@ -303,7 +392,11 @@
 		</div>
 		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}
-			tiers={[{ name: 'Distance', regions: userRegions }, ...textgridTiersForKey('Audio')]}
+			tiers={[
+				{ name: 'Distance', regions: userRegions },
+				...textgridTiersForKey('Audio'),
+				...learnerPhonologicalTiers
+			]}
 			transcript={tracks['Audio']?.transcript ?? undefined}
 			compareWith={modelViewer
 				? {

@@ -7,6 +7,7 @@
 
 	const ALIGNMENT_TIER_PREFIX = 'alignment:';
 	const ALIGNMENT_COLOR = 'rgba(170, 220, 180, 0.6)';
+	const PHONOLOGICAL_TIER_PREFIX = 'phonological:';
 
 	type CompareWith = {
 		other: { play: (start?: number, end?: number) => void; seek: (time?: number) => void };
@@ -206,21 +207,65 @@
 		};
 	});
 
-	function stripAlignmentPrefix(name: string): string {
-		return name.startsWith(ALIGNMENT_TIER_PREFIX)
-			? name.slice(ALIGNMENT_TIER_PREFIX.length)
-			: name;
+	/* Phonological tiers — master toggle */
+	let phonologicalEnabled = $state(true);
+
+	type TierGroup = {
+		prefix: string;
+		masterLabel: string;
+		alwaysShowMaster?: boolean;
+		enabled: boolean;
+		toggle: (v: boolean) => void;
+		disabled?: boolean;
+		title?: string;
+		suffix?: string;
+	};
+
+	const tierGroups: TierGroup[] = $derived([
+		{
+			prefix: ALIGNMENT_TIER_PREFIX,
+			masterLabel: 'Forced alignment',
+			alwaysShowMaster: true,
+			enabled: alignmentEnabled,
+			toggle: (v: boolean) => (alignmentEnabled = v),
+			disabled: !transcript,
+			title: !transcript ? 'Track has no transcript' : undefined,
+			suffix: alignmentLoading ? ' (loading…)' : ''
+		},
+		{
+			prefix: PHONOLOGICAL_TIER_PREFIX,
+			masterLabel: 'Phonological vectors',
+			enabled: phonologicalEnabled,
+			toggle: (v: boolean) => (phonologicalEnabled = v)
+		}
+	]);
+
+	function groupForTier(name: string | undefined): TierGroup | undefined {
+		if (!name) return undefined;
+		return tierGroups.find((g) => name.startsWith(g.prefix));
+	}
+
+	function stripTierPrefix(name: string): string {
+		const g = groupForTier(name);
+		return g ? name.slice(g.prefix.length) : name;
 	}
 
 	let allTiers = $derived([...tiers, ...alignmentTiers]);
 	let tiersWithRegions = $derived(allTiers.filter((t) => t.regions.length > 0));
 	let textgridTiersWithRegions = $derived(
-		tiersWithRegions.filter((t) => !t.name?.startsWith(ALIGNMENT_TIER_PREFIX))
+		tiersWithRegions.filter((t) => !groupForTier(t.name))
 	);
-	let alignmentTiersWithRegions = $derived(
-		tiersWithRegions.filter((t) => t.name?.startsWith(ALIGNMENT_TIER_PREFIX))
+	function groupTiers(prefix: string): Tier[] {
+		return tiersWithRegions.filter((t) => t.name?.startsWith(prefix));
+	}
+	let visibleTiers = $derived(
+		tiersWithRegions.filter((t) => {
+			if (hiddenTierNames.has(t.name!)) return false;
+			const g = groupForTier(t.name);
+			if (g && !g.enabled) return false;
+			return true;
+		})
 	);
-	let visibleTiers = $derived(tiersWithRegions.filter((t) => !hiddenTierNames.has(t.name!)));
 
 	function toggleTier(label: string) {
 		const next = new Set(hiddenTierNames);
@@ -546,9 +591,11 @@
 							onmousedown={(e) => handleRegionBarMouseDown(e, tier.regions)}
 						>
 							{#if duration}
-								{#each tier.regions as region (`${region.start}-${region.end}-${region.content ?? ''}`)}
+								{#each tier.regions as region (`${region.lane ?? ''}-${region.start}-${region.end}-${region.content ?? ''}`)}
 									<div
 										class="region-under"
+										class:lane-top={region.lane === 'top'}
+										class:lane-bottom={region.lane === 'bottom'}
 										style:left="{region.start * pxPerSec}px"
 										style:width="{(region.end - region.start) * pxPerSec}px"
 										style:background-color={region.color ?? 'rgba(255, 255, 197, 0.5)'}
@@ -565,16 +612,19 @@
 			</div>
 		</div>
 		{#if tiersWithRegions.length > 0 || transcript !== undefined}
-			<div class="tier-menu-anchor">
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="tier-menu-toggle"
-					onclick={() => (tierMenuOpen = !tierMenuOpen)}
-				>
-					<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
-						<title>Toggle tiers</title>
-						<path d="M4 6l4 4 4-4z" />
-					</svg>
+			<div class="tier-labels">
+				{#each visibleTiers as tier, i (tier)}
+					<div class="tier-label-row">
+						{#if i === 0}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="tier-menu-toggle"
+								onclick={() => (tierMenuOpen = !tierMenuOpen)}
+							>
+								<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
+									<title>Toggle tiers</title>
+									<path d="M4 6l4 4 4-4z" />
+								</svg>
 					{#if tierMenuOpen}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
@@ -599,39 +649,50 @@
 									{tier.name}
 								</label>
 							{/each}
-							{#if textgridTiersWithRegions.length > 0}
-								<div class="tier-menu-separator"></div>
-							{/if}
-							<label
-								class="tier-menu-item"
-								class:disabled={!transcript}
-								title={!transcript ? 'Track has no transcript' : undefined}
-							>
-								<input
-									type="checkbox"
-									bind:checked={alignmentEnabled}
-									disabled={!transcript}
-								/>
-								Forced alignment{alignmentLoading ? ' (loading…)' : ''}
-							</label>
-							{#if alignmentEnabled}
-								{#each alignmentTiersWithRegions as tier}
-									{@const isVisible = !hiddenTierNames.has(tier.name!)}
-									{@const isLastVisible = isVisible && visibleTiers.length === 1}
-									<label class="tier-menu-item sub" class:disabled={isLastVisible}>
+							{#each tierGroups as group}
+								{@const members = groupTiers(group.prefix)}
+								{#if group.alwaysShowMaster || members.length > 0}
+									<div class="tier-menu-separator"></div>
+									<label
+										class="tier-menu-item"
+										class:disabled={group.disabled}
+										title={group.title}
+									>
 										<input
 											type="checkbox"
-											checked={isVisible}
-											disabled={isLastVisible}
-											onchange={() => toggleTier(tier.name!)}
+											checked={group.enabled}
+											disabled={group.disabled}
+											onchange={(e) =>
+												group.toggle((e.currentTarget as HTMLInputElement).checked)}
 										/>
-										{stripAlignmentPrefix(tier.name!)}
+										{group.masterLabel}{group.suffix ?? ''}
 									</label>
-								{/each}
-							{/if}
+									{#if group.enabled}
+										{#each members as tier}
+											{@const isVisible = !hiddenTierNames.has(tier.name!)}
+											{@const isLastVisible = isVisible && visibleTiers.length === 1}
+											<label class="tier-menu-item sub" class:disabled={isLastVisible}>
+												<input
+													type="checkbox"
+													checked={isVisible}
+													disabled={isLastVisible}
+													onchange={() => toggleTier(tier.name!)}
+												/>
+												{stripTierPrefix(tier.name!)}
+											</label>
+										{/each}
+									{/if}
+								{/if}
+							{/each}
 						</div>
 					{/if}
-				</div>
+							</div>
+						{/if}
+						<span class="tier-label-name" title={tier.name}
+							>{stripTierPrefix(tier.name ?? '')}</span
+						>
+					</div>
+				{/each}
 			</div>
 		{/if}
 		<span id="duration">{duration ? format(duration) : '--:--'}</span>
@@ -698,14 +759,14 @@
 		flex-grow: 1;
 		position: relative;
 	}
-	.labels span {
+	.labels > span {
 		width: 3em;
 		/* Center vertically against the waveform height */
 		height: var(--waveform-height);
 		display: flex;
 		align-items: center;
 	}
-	.labels span#duration {
+	.labels > span#duration {
 		text-align: right;
 	}
 
@@ -718,6 +779,10 @@
 		display: flex;
 		flex-direction: column;
 		transform: rotateX(180deg);
+		scrollbar-width: none;
+	}
+	.waveform-container::-webkit-scrollbar {
+		display: none;
 	}
 
 	.scroll-wrapper {
@@ -749,6 +814,14 @@
 		box-sizing: border-box;
 		overflow: hidden;
 	}
+	.region-under.lane-top {
+		top: 0;
+		height: 50%;
+	}
+	.region-under.lane-bottom {
+		top: 50%;
+		height: 50%;
+	}
 
 	.region-content-under {
 		padding: 4px;
@@ -759,19 +832,37 @@
 		user-select: none;
 	}
 
-	.tier-menu-anchor {
+	.tier-labels {
+		/* Stack of per-tier labels sitting in the left gutter, aligned with the
+		   rows of .regions-bar on the right. The first row also hosts the menu
+		   toggle (dropdown arrow) to the left of the label name. */
 		position: absolute;
-		/* Sit in the left gutter (under the time label), aligned vertically
-		   with the first tier bar so the menu clearly belongs to the tiers. */
 		left: 0;
 		top: var(--waveform-height);
 		width: calc(3em + 0.5em);
+		display: flex;
+		flex-direction: column;
+		z-index: 10;
+	}
+	.tier-label-row {
 		height: 24px;
+		/* mirror .regions-bar's 1px top border so rows stay aligned */
+		border-top: 1px solid transparent;
+		box-sizing: content-box;
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		padding-right: 10px;
-		z-index: 10;
+		gap: 4px;
+		padding-right: 6px;
+	}
+	.tier-label-name {
+		font-size: 11px;
+		line-height: 1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		color: var(--foreground-color);
+		opacity: 0.8;
 	}
 
 	.tier-menu-toggle {

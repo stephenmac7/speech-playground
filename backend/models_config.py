@@ -322,6 +322,46 @@ else:
     )
 
 
+PHONVEC_WEIGHTS_PATH = os.getenv("PHONVEC_WEIGHTS_PATH", "weights/phonological_vectors.npz")
+if not Path(PHONVEC_WEIGHTS_PATH).is_absolute():
+    PHONVEC_WEIGHTS_PATH = PARENT_DIR / PHONVEC_WEIGHTS_PATH
+else:
+    PHONVEC_WEIGHTS_PATH = Path(PHONVEC_WEIGHTS_PATH)
+
+
+class PhonologicalVectorMetadata(ModelMetadata):
+    slug = "phonological-vector"
+    name = "Phonological Vector"
+
+    @lru_cache()
+    def load(self):
+        from speech_playground.encoder.phonological_vector import PhonologicalVectorEncoder
+
+        return PhonologicalVectorEncoder(weights_path=str(PHONVEC_WEIGHTS_PATH))
+
+    def discretizers(self):
+        return []
+
+    def encode(self, waveform: torch.Tensor):
+        return self.load().encode_one(waveform)  # (T, F) np.ndarray
+
+    def extra_results(self, x):
+        model = self.load()
+        return {
+            "phonologicalActivations": x.tolist(),
+            "phonologicalFeatureNames": model.featnames,
+        }
+
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return True
+
+    @property
+    def cosine_alpha(self):
+        """Alpha parameter for sharpening cosine distance."""
+        return 9.0
+
+
 class InversionMetadata(ModelMetadata):
     slug = "inversion"
     name = "Articulatory Inversion"
@@ -570,6 +610,14 @@ if INVERSION_TOP is not None:
     MODELS.append(InversionMetadata())
 else:
     print("WARNING: Articulatory Inversion model files not found; skipping inversion encoder.")
+
+if Path(PHONVEC_WEIGHTS_PATH).exists():
+    MODELS.append(PhonologicalVectorMetadata())
+else:
+    print(
+        f"WARNING: Phonological vector weights not found at {PHONVEC_WEIGHTS_PATH}; "
+        "skipping phonological-vector encoder."
+    )
 
 syllablelm_checkpoints_path = os.getenv("SYLLABLELM_CHECKPOINTS_PATH")
 if syllablelm_checkpoints_path is not None:

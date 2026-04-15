@@ -4,7 +4,7 @@
 	import EncoderFieldset from '$lib/EncoderFieldset.svelte';
 	import { postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
-	import { buildNeutralSegmentRegions, type Tier } from '$lib/regions';
+	import { buildNeutralSegmentRegions, buildPhonologicalTiers, type Tier } from '$lib/regions';
 	import type { ModelsResponse, EncoderConfig } from '$lib/types';
 
 	let {
@@ -21,12 +21,20 @@
 
 	let learnerSegments = $state<number[][] | undefined>();
 	let articulatoryFeatures = $state<number[][] | undefined>();
+	let phonologicalActivations = $state<number[][] | undefined>();
+	let phonologicalFeatureNames = $state<string[] | undefined>();
 	let currentTime = $state(0);
 	let loading = $state(false);
 
 	const currentFrame = $derived(Math.floor(currentTime * 50));
 
 	const regions = $derived(learnerSegments ? buildNeutralSegmentRegions(learnerSegments) : []);
+
+	const phonologicalTiers = $derived.by<Tier[]>(() =>
+		phonologicalActivations && phonologicalFeatureNames
+			? buildPhonologicalTiers(phonologicalActivations, phonologicalFeatureNames)
+			: []
+	);
 
 	function textgridTiers(): Tier[] {
 		const tg = tracks['Audio']?.textgrid;
@@ -51,6 +59,8 @@
 			loading = true;
 			learnerSegments = undefined;
 			articulatoryFeatures = undefined;
+			phonologicalActivations = undefined;
+			phonologicalFeatureNames = undefined;
 
 			const formData = new FormData();
 			formData.append('file', audio, 'recording.wav');
@@ -68,9 +78,13 @@
 				const data = await postJson<{
 					learnerSegments?: number[][];
 					articulatoryFeatures?: number[][];
+					phonologicalActivations?: number[][];
+					phonologicalFeatureNames?: string[];
 				}>(`/api/analyze`, formData, controller.signal);
 				learnerSegments = data.learnerSegments;
 				articulatoryFeatures = data.articulatoryFeatures;
+				phonologicalActivations = data.phonologicalActivations;
+				phonologicalFeatureNames = data.phonologicalFeatureNames;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError')
 					reportError('Error running analysis.', e);
@@ -87,7 +101,7 @@
 	<div class="viewer-card">
 		<SampleViewer
 			{audio}
-			tiers={[{ name: 'Segments', regions }, ...textgridTiers()]}
+			tiers={[{ name: 'Segments', regions }, ...textgridTiers(), ...phonologicalTiers]}
 			transcript={tracks['Audio']?.transcript ?? undefined}
 			bind:currentTime
 		/>

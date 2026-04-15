@@ -9,6 +9,7 @@
 
 # Custom
 scratch/
+weights/
 models_local.py
 
 # Temporary

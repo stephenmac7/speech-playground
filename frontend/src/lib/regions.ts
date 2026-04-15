@@ -6,12 +6,82 @@ export type Region = {
 	end: number;
 	content?: string;
 	color?: string;
+	lane?: 'top' | 'bottom';
 };
 
 export type Tier = {
 	name?: string;
 	regions: Region[];
 };
+
+// matplotlib PuOr diverging colormap, 7 stops from -1 to +1.
+const PUOR_STOPS: [number, [number, number, number]][] = [
+	[-1.0, [127, 59, 8]],
+	[-2 / 3, [224, 130, 20]],
+	[-1 / 3, [253, 184, 99]],
+	[0.0, [247, 247, 247]],
+	[1 / 3, [178, 171, 210]],
+	[2 / 3, [128, 115, 172]],
+	[1.0, [45, 0, 75]]
+];
+
+function puOr(t: number, alpha = 1.0): string {
+	const x = Math.max(-1, Math.min(1, t));
+	let i = 0;
+	while (i < PUOR_STOPS.length - 1 && x > PUOR_STOPS[i + 1][0]) i++;
+	const [x0, c0] = PUOR_STOPS[i];
+	const [x1, c1] = PUOR_STOPS[Math.min(i + 1, PUOR_STOPS.length - 1)];
+	const f = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
+	const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+	const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+	const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+export function buildPhonologicalTier(
+	activations: number[][],
+	featIdx: number,
+	featName: string,
+	frameShift: number,
+	vrange: number
+): Tier {
+	const regions: Region[] = [];
+	for (let t = 0; t < activations.length; t++) {
+		const v = activations[t][featIdx];
+		regions.push({
+			id: `${featName}-${t}`,
+			start: t * frameShift,
+			end: (t + 1) * frameShift,
+			content: '',
+			color: puOr(v / vrange)
+		});
+	}
+	return { name: featName, regions };
+}
+
+export function buildPhonologicalTiers(
+	activations: number[][],
+	featureNames: string[],
+	frameShift = 0.02,
+	namePrefix = 'phonological:'
+): Tier[] {
+	let vrange = 0;
+	for (let t = 0; t < activations.length; t++) {
+		for (let f = 0; f < activations[t].length; f++) {
+			const a = Math.abs(activations[t][f]);
+			if (a > vrange) vrange = a;
+		}
+	}
+	if (vrange === 0) vrange = 1;
+	const tiers: Tier[] = [];
+	for (let f = 0; f < featureNames.length; f++) {
+		const name = featureNames[f];
+		if (name.endsWith('-')) continue;
+		if (name === 'speech+') continue;
+		tiers.push(buildPhonologicalTier(activations, f, `${namePrefix}${name}`, frameShift, vrange));
+	}
+	return tiers;
+}
 
 export function buildNeutralSegmentRegions(segments: number[][]): Region[] {
 	return segments.map((segment, i) => ({
