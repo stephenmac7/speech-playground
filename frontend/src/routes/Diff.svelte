@@ -359,7 +359,7 @@
 <div class={loading ? 'waiting' : ''}>
 	<div class="viewer-card">
 		<div class="viewer-header">
-			<h3>Model Audio</h3>
+			<h3>Model</h3>
 			<Tooltip position="bottom">
 				<b>Playback controls</b>
 				<ul class="tooltip-list">
@@ -388,7 +388,7 @@
 				: null}
 		/>
 		<div class="viewer-header">
-			<h3>Learner Audio</h3>
+			<h3>Audio</h3>
 		</div>
 		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}

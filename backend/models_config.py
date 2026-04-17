@@ -390,6 +390,31 @@ class InversionMetadata(ModelMetadata):
         return "euclidean"
 
 
+class SpidRMetadata(ModelMetadata):
+    slug = "spidr"
+    name = "SpidR L5"
+
+    @lru_cache()
+    def load(self):
+        from speech_playground.encoder.spidr import SpidREncoder
+
+        return SpidREncoder(layer=5)
+
+    def discretizers(self):
+        return []
+
+    def encode(self, waveform: torch.Tensor):
+        return self.load().encode_one(waveform).cpu().numpy()
+
+    @property
+    def has_fixed_frame_rate(self) -> bool:
+        return True
+
+    @property
+    def cosine_alpha(self):
+        return 2.0
+
+
 class SylberMetadata(ModelMetadata):
     def discretizers(self):
         return []
@@ -491,6 +516,7 @@ MODELS = [
     HubertMetadata(),
     SylberV1Metadata(),
     ZeroSylMetadata(checkpoint_path=os.getenv("ZEROSYL_CHECKPOINT_PATH")),
+    SpidRMetadata(),
 ]
 if INVERSION_TOP is not None:
     MODELS.append(InversionMetadata())

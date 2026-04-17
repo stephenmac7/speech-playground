@@ -327,7 +327,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1em;
-		padding: 0.6em;
+		padding: 0.5rem;
 		box-sizing: border-box;
 		overflow-y: auto;
 		scrollbar-width: none;

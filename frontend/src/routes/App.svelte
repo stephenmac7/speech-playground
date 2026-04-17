@@ -95,7 +95,7 @@
 		display: flex;
 		flex-direction: row;
 		gap: 1.5rem;
-		padding: 1rem;
+		padding: 0 1rem;
 		max-width: 2100px;
 		margin: 0 auto;
 		width: 100%;
@@ -123,6 +123,7 @@
 		gap: 1rem;
 		overflow-y: auto;
 		scrollbar-width: none;
+		padding: 0.5rem 0;
 	}
 	.tool-display::-webkit-scrollbar {
 		display: none;
