@@ -27,7 +27,7 @@
 		encoderConfig: EncoderConfig;
 	} = $props();
 
-	const audio = $derived(tracks['Audio']?.data ?? undefined);
+	const audio = $derived(tracks['Query']?.data ?? undefined);
 	const modelAudio = $derived(tracks['Model']?.data ?? undefined);
 
 	const vcModelOptions = $derived(modelsConfig.vc_models);
@@ -388,16 +388,16 @@
 				: null}
 		/>
 		<div class="viewer-header">
-			<h3>Audio</h3>
+			<h3>Query</h3>
 		</div>
 		<SampleViewer
 			audio={convertVoice ? convertedAudio : audio}
 			tiers={[
 				{ name: 'Distance', regions: userRegions },
-				...textgridTiersForKey('Audio'),
+				...textgridTiersForKey('Query'),
 				...learnerPhonologicalTiers
 			]}
-			transcript={tracks['Audio']?.transcript ?? undefined}
+			transcript={tracks['Query']?.transcript ?? undefined}
 			compareWith={modelViewer
 				? {
 						other: modelViewer,
@@ -518,33 +518,27 @@
 		list-style-type: '- ';
 	}
 	.controls {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(20em, 1fr));
+		grid-template-rows: masonry;
 		gap: 1rem;
-		align-items: flex-start;
-		justify-content: stretch;
+		align-items: start;
 		margin-top: 1rem;
 	}
 	fieldset {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 0.5rem;
 		border: 1px solid var(--border-color);
 		border-radius: 4px;
-		padding: 1rem;
+		padding: 0.75rem;
 		background-color: var(--surface-color);
+		min-width: 0;
 	}
 	label {
 		display: flex;
 		align-items: center;
 		gap: 0.5em;
-	}
-	select {
-		padding: 0.5rem;
-		border: 1px solid var(--border-color);
-		border-radius: 4px;
-		background-color: var(--surface-color);
-		color: var(--foreground-color);
 	}
 	.disabled {
 		opacity: 0.5;
@@ -553,8 +547,8 @@
 		background-color: var(--surface-color);
 		border-radius: 8px;
 		border: 1px solid var(--border-color);
-		padding: 1rem;
-		margin-bottom: 1rem;
+		padding: 0.75rem;
+		margin-bottom: 0.75rem;
 	}
 
 	.viewer-header {

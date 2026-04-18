@@ -112,11 +112,12 @@
 	fieldset {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 0.5rem;
 		border: 1px solid var(--border-color);
 		border-radius: 4px;
-		padding: 1rem;
+		padding: 0.75rem;
 		background-color: var(--surface-color);
+		min-width: 0;
 	}
 	.sub-fieldset {
 		padding: 0.5rem;
@@ -126,17 +127,14 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5em;
+		min-width: 0;
+	}
+	label select {
+		min-width: 0;
 	}
 	.radio-group {
 		display: flex;
 		gap: 1rem;
-	}
-	select {
-		padding: 0.5rem;
-		border: 1px solid var(--border-color);
-		border-radius: 4px;
-		background-color: var(--surface-color);
-		color: var(--foreground-color);
 	}
 	.disabled {
 		opacity: 0.5;

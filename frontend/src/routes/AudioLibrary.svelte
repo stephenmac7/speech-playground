@@ -1,6 +1,6 @@
 <script lang="ts">
 	import AudioSelector from './AudioSelector.svelte';
-	import SampleViewer from './SampleViewer.svelte';
+	import AudioPreview from './AudioPreview.svelte';
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 	import { untrack } from 'svelte';
 	import { reportError } from '$lib/errors';
@@ -256,7 +256,7 @@
 					onclick={() => openTextGridPicker(track.id)}
 					title="Attach TextGrid"
 				>
-					<span style="font-weight: bold; font-size: 14px; letter-spacing: -1px;"><span style="display: inline-block; transform: translateY(-2px);">T</span><span style="display: inline-block; transform: translateY(2px);">G</span></span>
+					<span style="font-weight: bold; font-size: 0.85em; letter-spacing: -1px;"><span style="display: inline-block; transform: translateY(-2px);">T</span><span style="display: inline-block; transform: translateY(2px);">G</span></span>
 				</button>
 				<button
 					class="track-action-button"
@@ -279,7 +279,7 @@
 					</svg>
 				</button>
 			</div>
-			<SampleViewer audio={track.data} zoom={false} layout="compact" clickToPlay={true} />
+			<AudioPreview audio={track.data} />
 			<AudioSelector
 				{recorder}
 				bind:value={() => track.data, (blob) => updateTrack(track.id, blob)}
@@ -307,16 +307,9 @@
 	.requested-tracks {
 		display: flex;
 		gap: 0.5em;
-		margin-bottom: 1em;
 	}
 	.requested-track-button {
-		border: 1px solid var(--border-color);
-		padding: 0.5em 0.75em;
-		cursor: pointer;
 		background-color: color-mix(in srgb, var(--selection-color) 25%, var(--surface-color));
-		border-radius: 4px;
-		font-family: var(--font-family-sans-serif);
-		font-size: 1rem;
 	}
 	.requested-track-button.selected {
 		outline: 2px solid var(--selection-color);
@@ -326,8 +319,9 @@
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		gap: 1em;
-		padding: 0.5rem;
+		gap: 0.75em;
+		padding: 0.75em 0.45em 0.5rem 0.75em;
+		margin-left: -0.75em;
 		box-sizing: border-box;
 		overflow-y: auto;
 		scrollbar-width: none;
@@ -339,12 +333,12 @@
 	.track {
 		position: relative;
 		display: grid;
-		grid-template-columns: 1fr 2fr;
-		gap: 1em;
+		grid-template-columns: auto 1fr;
+		gap: 0.75em;
 		border: 1px solid var(--border-color);
 		background-color: var(--surface-color);
 		border-radius: 4px;
-		padding: 1em;
+		padding: 1.3em 0.6em 0.6em 0.6em;
 		align-items: center;
 	}
 	.track > :global(*) {
@@ -378,17 +372,7 @@
 		border: 1px solid var(--border-color);
 	}
 	.add-track {
-		border: 1px solid var(--border-color);
-		padding: 0.5em 0.75em;
-		cursor: pointer;
-		background-color: var(--surface-color);
-		border-radius: 4px;
-		font-family: var(--font-family-sans-serif);
-		font-size: 1rem;
 		text-align: center;
-	}
-	.add-track:hover {
-		background-color: var(--background-color);
 	}
 	.track-actions {
 		position: absolute;
@@ -396,21 +380,20 @@
 		right: -0.6em;
 		display: flex;
 		gap: 0.2em;
+		z-index: 1;
 	}
 	.track-action-button {
-		background: var(--surface-color);
-		border: 1px solid var(--border-color);
 		border-radius: 50%;
-		cursor: pointer;
 		padding: 0.2em;
-		width: 28px;
-		height: 28px;
+		width: 1.75rem;
+		height: 1.75rem;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 	}
-	.track-action-button:hover {
-		background-color: var(--background-color);
+	.track-action-button svg {
+		width: 1.1em;
+		height: 1.1em;
 	}
 	.track-action-button:disabled {
 		display: none;

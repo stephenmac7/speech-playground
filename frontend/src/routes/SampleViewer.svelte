@@ -21,7 +21,6 @@
 		transcript,
 		clickToPlay = false,
 		zoom = true,
-		layout = 'default',
 		compareWith = null,
 		currentTime = $bindable(0)
 	}: {
@@ -30,7 +29,6 @@
 		transcript?: string;
 		clickToPlay?: boolean;
 		zoom?: boolean;
-		layout?: 'default' | 'compact';
 		compareWith?: CompareWith | null;
 		currentTime?: number;
 	} = $props();
@@ -50,7 +48,8 @@
 	let shiftDown = $state(false);
 	let playOther = $state(false);
 
-	let height = $derived(layout === 'compact' ? 70 : 128);
+	let innerHeight = $state(typeof window !== 'undefined' ? window.innerHeight : 1067);
+	let height = $derived(Math.round(Math.min(128, Math.max(64, innerHeight * 0.14))));
 
 	let pxPerSec = $state(0);
 	let isFitToView = $state(true);
@@ -637,26 +636,22 @@
 	}
 </script>
 
-<svelte:window on:keydown={handleKeydown} on:keyup={handleKeyup} on:blur={handleWindowBlur} />
+<svelte:window on:keydown={handleKeydown} on:keyup={handleKeyup} on:blur={handleWindowBlur} bind:innerHeight />
 
-<div class="sample-viewer" class:compact={layout === 'compact'} style:--waveform-height="{height}px">
-	{#if layout !== 'compact'}
-		<button bind:this={playButton} onclick={() => wavesurfer.playPause()}>
-			{#if playing}
-				<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"
-					><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
-				>
-			{:else}
-				<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"
-					><path d="M8 5v14l11-7z" /></svg
-				>
-			{/if}
-		</button>
-	{/if}
-	<div class="labels">
-		{#if layout !== 'compact'}
-			<span id="time">{format(currentTime)}</span>
+<div class="sample-viewer" style:--waveform-height="{height}px">
+	<button class="play-button" bind:this={playButton} onclick={() => wavesurfer.playPause()}>
+		{#if playing}
+			<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"
+				><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
+			>
+		{:else}
+			<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"
+				><path d="M8 5v14l11-7z" /></svg
+			>
 		{/if}
+	</button>
+	<div class="labels">
+		<span id="time">{format(currentTime)}</span>
 		<div
 			class="waveform-container"
 			bind:this={waveformContainer}
@@ -778,15 +773,6 @@
 		{/if}
 		<span id="duration">{duration ? format(duration) : '--:--'}</span>
 	</div>
-	{#if layout === 'compact'}
-		<button bind:this={playButton} onclick={() => wavesurfer.playPause()}>
-			{#if playing}
-				Pause
-			{:else}
-				Play
-			{/if}
-		</button>
-	{/if}
 </div>
 
 <style>
@@ -798,38 +784,19 @@
 	}
 
 	button {
-		cursor: pointer;
-		background-color: var(--surface-color);
-		color: var(--foreground-color);
-		border: 1px solid var(--border-color);
 		transition: background-color 0.2s;
 	}
-	button:hover {
-		background-color: var(--background-color);
-	}
 
-	.sample-viewer:not(.compact) button {
+	.play-button {
 		border-radius: 50%;
-		width: 48px;
-		height: 48px;
+		width: 3em;
+		height: 3em;
 		display: flex;
 		justify-content: center;
 		align-items: center;
 		padding: 0;
 		flex-shrink: 0;
-		/* Center vertically against the waveform, not the full column including tiers */
-		margin-top: calc((var(--waveform-height) - 48px) / 2);
-	}
-
-	.sample-viewer.compact {
-		flex-direction: column;
-		gap: 0.5em;
-		align-items: stretch;
-	}
-
-	.sample-viewer.compact button {
-		border-radius: 4px;
-		padding: 0.5em 0.75em;
+		margin-top: calc((var(--waveform-height) - 3em) / 2);
 	}
 
 	.labels {
@@ -927,10 +894,8 @@
 		opacity: 0.8;
 	}
 
-	.sample-viewer:not(.compact) .tier-menu-toggle,
-	.sample-viewer:not(.compact) .tier-menu-toggle:hover,
-	.sample-viewer.compact .tier-menu-toggle,
-	.sample-viewer.compact .tier-menu-toggle:hover {
+	.tier-menu-toggle,
+	.tier-menu-toggle:hover {
 		cursor: pointer;
 		line-height: 0;
 		position: relative;

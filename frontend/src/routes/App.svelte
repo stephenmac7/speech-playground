@@ -17,7 +17,7 @@
 		gamma: '0.2'
 	});
 
-	let requestedTracks = $derived(mode === 'diff' ? ['Model', 'Audio'] : ['Audio']);
+	let requestedTracks = $derived(mode === 'diff' ? ['Model', 'Query'] : ['Audio']);
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -86,7 +86,7 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 1rem;
+		padding: 0.5rem 0.75rem;
 		max-width: 2100px;
 		margin: 0 auto;
 	}
@@ -94,8 +94,8 @@
 	main {
 		display: flex;
 		flex-direction: row;
-		gap: 1.5rem;
-		padding: 0 1rem;
+		gap: 1rem;
+		padding: 0 0.75rem;
 		max-width: 2100px;
 		margin: 0 auto;
 		width: 100%;
@@ -120,7 +120,7 @@
 		flex: 2 1 0;
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 0.75rem;
 		overflow-y: auto;
 		scrollbar-width: none;
 		padding: 0.5rem 0;
@@ -132,7 +132,7 @@
 	aside {
 		flex: 1 1 0;
 		border-left: 1px solid var(--border-color);
-		padding-left: 1.5rem;
+		padding-left: 1rem;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;

@@ -7,6 +7,8 @@
 
 	let actualStartTime: number | undefined = $state();
 	let resolveEndRecording: ((result: { blob: Blob; duration: number }) => void) | undefined;
+	let innerHeight = $state(typeof window !== 'undefined' ? window.innerHeight : 1067);
+	let height = $derived(Math.round(Math.min(128, Math.max(64, innerHeight * 0.12))));
 
 	function waveform(node: HTMLDivElement) {
 		wavesurfer = WaveSurfer.create({
@@ -15,6 +17,7 @@
 			progressColor: '#383351',
 			barWidth: 2,
 			cursorWidth: 2,
+			height: height,
 			dragToSeek: true
 		});
 		record = wavesurfer.registerPlugin(
@@ -44,6 +47,12 @@
 			}
 		};
 	}
+
+	$effect(() => {
+		if (wavesurfer) {
+			wavesurfer.setOptions({ height });
+		}
+	});
 
 	export function startRecording(): Promise<void> {
 		if (!record) {
@@ -95,12 +104,21 @@
 	}
 </script>
 
-<div use:waveform class:hide={!actualStartTime}></div>
+<svelte:window bind:innerHeight />
+
+<div class="recorder-container">
+	<div use:waveform class="recorder-inner" class:hide={!actualStartTime} style:height="{height}px"></div>
+</div>
 
 <style>
-	div {
+	.recorder-container {
+		margin-top: -0.5rem;
+		margin-bottom: 0.5rem;
+		border: 1px dashed var(--border-color);
+		border-radius: 4px;
+	}
+	.recorder-inner {
 		opacity: 1;
-		height: 128px; /* Give the element a fixed height */
 		overflow: hidden;
 
 		/* Base (visible) state */

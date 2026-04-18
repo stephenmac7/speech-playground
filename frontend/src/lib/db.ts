@@ -1,5 +1,5 @@
 // src/lib/db.ts
-import { PUBLIC_EXAMPLE_PATH, PUBLIC_EXAMPLE_MODEL_PATH } from '$env/static/public';
+import { PUBLIC_EXAMPLE_PATH, PUBLIC_EXAMPLE_TRANSCRIPT, PUBLIC_EXAMPLE_MODEL_PATH, PUBLIC_EXAMPLE_MODEL_TRANSCRIPT } from '$env/static/public';
 import { getBlob } from '$lib/api';
 import { reportError } from '$lib/errors';
 import Dexie, { type EntityTable } from 'dexie';
@@ -33,8 +33,8 @@ db.on('ready', async (db) => {
 				]);
 				console.log('Fetched example audio and model blobs');
 				await Promise.all([
-					db.table('audio_tracks').add({ keys: ['Audio'], data: audio }),
-					db.table('audio_tracks').add({ keys: ['Model'], data: model })
+					db.table('audio_tracks').add({ keys: ['Audio', 'Query'], data: audio, transcript: PUBLIC_EXAMPLE_TRANSCRIPT }),
+					db.table('audio_tracks').add({ keys: ['Model'], data: model, transcript: PUBLIC_EXAMPLE_MODEL_TRANSCRIPT })
 				]);
 				console.log('Done populating.');
 			} catch (e) {

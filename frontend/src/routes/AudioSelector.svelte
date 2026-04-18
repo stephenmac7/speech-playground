@@ -159,12 +159,12 @@
 		<!-- Recording -->
 		<button onclick={toggleRecording} disabled={busy}>
 			{#if isRecording}
-				<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+				<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">
 					<path d="M6 6h12v12H6z" />
 				</svg>
 				Stop
 			{:else}
-				<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+				<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">
 					<circle cx="12" cy="12" r="8" />
 				</svg>
 				Record
@@ -306,7 +306,6 @@
 	.transcript-text {
 		flex: 1;
 		min-width: 0;
-		font-size: 0.95rem;
 		color: var(--foreground-color);
 		white-space: normal;
 		overflow-wrap: anywhere;
@@ -323,7 +322,6 @@
 		background-color: var(--surface-color);
 		color: var(--foreground-color);
 		font-family: var(--font-family-sans-serif);
-		font-size: 0.95rem;
 	}
 	.transcript-edit-button {
 		padding: 0.2em 0.35em;
@@ -343,33 +341,29 @@
 
 	button,
 	.file-input {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.4em;
+		text-align: center;
+	}
+
+	.file-input {
 		border: 1px solid var(--border-color);
-		padding: 0.5em 0.75em;
+		padding: 0.35em 0.5em;
 		cursor: pointer;
 		background-color: var(--surface-color);
 		color: var(--foreground-color);
 		border-radius: 4px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5em;
 		font-family: var(--font-family-sans-serif);
-		font-size: 1rem;
-		text-align: center;
 	}
 
 	button:disabled {
 		cursor: wait;
-		opacity: 0.6;
 	}
 
-	button:hover,
 	.file-input:hover {
 		background-color: var(--background-color);
-	}
-	button:disabled:hover {
-		/* prevent hover color change when disabled */
-		background-color: var(--surface-color);
 	}
 
 	.file-input input[type='file'] {

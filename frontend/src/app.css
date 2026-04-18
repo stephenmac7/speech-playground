@@ -16,7 +16,42 @@ body {
 	background-color: var(--background-color);
 	color: var(--foreground-color);
 	font-family: var(--font-family-sans-serif);
+	font-size: clamp(13px, 0.5vw + 10px, 16px);
 	margin: 0;
+}
+
+select {
+	padding: 0.25em 0.4em;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--surface-color);
+	color: var(--foreground-color);
+	font-family: var(--font-family-sans-serif);
+	font-size: 0.9em;
+}
+
+button {
+	border: 1px solid var(--border-color);
+	padding: 0.35em 0.5em;
+	cursor: pointer;
+	background-color: var(--surface-color);
+	color: var(--foreground-color);
+	border-radius: 4px;
+	font-family: var(--font-family-sans-serif);
+	font-size: inherit;
+}
+
+button:hover {
+	background-color: var(--background-color);
+}
+
+button:disabled {
+	cursor: default;
+	opacity: 0.6;
+}
+
+button:disabled:hover {
+	background-color: var(--surface-color);
 }
 
 .waiting {
