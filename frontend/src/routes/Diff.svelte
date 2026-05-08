@@ -412,10 +412,10 @@
 		<div class="viewer-card">
 			<h3>Articulatory Features</h3>
 			<ArticulatoryFeatures
-				learnerFeatures={articulatoryFeatures[1][currentFrame]}
-				referenceFeatures={alignmentMap
-					? articulatoryFeatures[0][alignmentMap[currentFrame]]
-					: undefined}
+				learnerFeatures={articulatoryFeatures[1]}
+				learnerFrame={currentFrame}
+				referenceFeatures={alignmentMap ? articulatoryFeatures[0] : undefined}
+				referenceFrame={alignmentMap ? alignmentMap[currentFrame] : undefined}
 			/>
 		</div>
 	{/if}

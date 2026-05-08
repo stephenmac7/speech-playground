@@ -111,8 +111,8 @@
 		<div class="viewer-card">
 			<h3>Articulatory Features</h3>
 			<ArticulatoryFeatures
-				learnerFeatures={articulatoryFeatures[currentFrame]}
-				referenceFeatures={undefined}
+				learnerFeatures={articulatoryFeatures}
+				learnerFrame={currentFrame}
 			/>
 		</div>
 	{/if}

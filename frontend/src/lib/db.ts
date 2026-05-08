@@ -33,8 +33,8 @@ db.on('ready', async (db) => {
 				]);
 				console.log('Fetched example audio and model blobs');
 				await Promise.all([
-					db.table('audio_tracks').add({ keys: ['Audio', 'Query'], data: audio, transcript: PUBLIC_EXAMPLE_TRANSCRIPT }),
-					db.table('audio_tracks').add({ keys: ['Model'], data: model, transcript: PUBLIC_EXAMPLE_MODEL_TRANSCRIPT })
+					db.table('audio_tracks').add({ keys: ['Model'], data: model, transcript: PUBLIC_EXAMPLE_MODEL_TRANSCRIPT }),
+					db.table('audio_tracks').add({ keys: ['Audio', 'Query'], data: audio, transcript: PUBLIC_EXAMPLE_TRANSCRIPT })
 				]);
 				console.log('Done populating.');
 			} catch (e) {
