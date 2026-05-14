@@ -5,7 +5,7 @@
 	import { postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
 	import { buildNeutralSegmentRegions, buildPhonologicalTiers, type Tier } from '$lib/regions';
-	import type { ModelsResponse, EncoderConfig } from '$lib/types';
+	import type { ModelsResponse, EncoderConfig, Segment } from '$lib/types';
 
 	let {
 		tracks,
@@ -19,7 +19,7 @@
 
 	const audio = $derived(tracks['Audio']?.data ?? undefined);
 
-	let learnerSegments = $state<number[][] | undefined>();
+	let learnerSegments = $state<Segment[] | undefined>();
 	let articulatoryFeatures = $state<number[][] | undefined>();
 	let phonologicalActivations = $state<number[][] | undefined>();
 	let phonologicalFeatureNames = $state<string[] | undefined>();
@@ -76,7 +76,7 @@
 
 			try {
 				const data = await postJson<{
-					learnerSegments?: number[][];
+					learnerSegments?: Segment[];
 					articulatoryFeatures?: number[][];
 					phonologicalActivations?: number[][];
 					phonologicalFeatureNames?: string[];

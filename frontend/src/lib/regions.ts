@@ -1,5 +1,7 @@
 // Region utilities shared by routes
 
+import type { Segment } from '$lib/types';
+
 export type Region = {
 	id?: string;
 	start: number;
@@ -134,19 +136,19 @@ export function buildPhonologicalTiers(
 	return tiers;
 }
 
-export function buildNeutralSegmentRegions(segments: number[][]): Region[] {
+export function buildNeutralSegmentRegions(segments: Segment[]): Region[] {
 	return segments.map((segment, i) => ({
 		id: `segment-${i}`,
-		start: segment[0],
-		end: segment[1],
-		content: i.toString(),
+		start: segment.start,
+		end: segment.end,
+		content: segment.content ?? i.toString(),
 		color: 'rgba(100, 150, 200, 0.25)'
 	}));
 }
 
 export function buildContinuousRegions(
 	allScores: number[],
-	segments: number[][],
+	segments: Segment[],
 	trigger: number,
 	min: number,
 	combineRegions: boolean = true,
@@ -180,8 +182,8 @@ export function buildContinuousRegions(
 
 			return {
 				id: 'segment-' + i,
-				start: segments[i][0],
-				end: segments[i][1],
+				start: segments[i].start,
+				end: segments[i].end,
 				color: isInsertion ? `rgba(255, 255, 0, 0.5)` : `rgba(255, 0, 0, ${opacity})`,
 				content
 			};
@@ -192,8 +194,8 @@ export function buildContinuousRegions(
 	let current: { start: number; scores: number[] } | undefined;
 
 	const createRegion = (startFrame: number, endFrame: number, scores: number[]) => {
-		const startTime = segments[startFrame][0];
-		const endTime = segments[endFrame - 1][1];
+		const startTime = segments[startFrame].start;
+		const endTime = segments[endFrame - 1].end;
 		const duration = endTime - startTime;
 		if (duration < 0.1) return; // Ignore very short regions
 
@@ -281,7 +283,7 @@ export function buildContinuousRegions(
 // New helper function
 function buildIndividualSegmentRegions(
 	scores: number[],
-	segments: number[][],
+	segments: Segment[],
 	alignmentMap?: number[],
 	modelIndexMap?: number[],
 	showScore: boolean = false
@@ -308,8 +310,8 @@ function buildIndividualSegmentRegions(
 
 			regions.push({
 				id: `region-${startFrame}-${endFrame}`,
-				start: segments[startFrame][0],
-				end: segments[endFrame - 1][1], // segments[i][1]
+				start: segments[startFrame].start,
+				end: segments[endFrame - 1].end,
 				color: isInsertion ? `rgba(255, 255, 0, 0.5)` : `rgba(255, 0, 0, ${opacity})`,
 				content
 			});
@@ -320,7 +322,7 @@ function buildIndividualSegmentRegions(
 
 export function buildSegmentRegions(
 	scores: number[], // size N
-	segments: number[][], // size N
+	segments: Segment[], // size N
 	combineRegions: boolean = false,
 	alignmentMap?: number[],
 	modelIndexMap?: number[],
@@ -389,8 +391,8 @@ export function buildSegmentRegions(
 
 		regions.push({
 			id: `region-${startFrame}-${endFrame}`,
-			start: segments[startFrame][0],
-			end: segments[endFrame - 1][1],
+			start: segments[startFrame].start,
+			end: segments[endFrame - 1].end,
 			color,
 			content
 		});
@@ -438,7 +440,7 @@ export function buildSegmentRegions(
 }
 
 export function buildCombinedModelRegions(
-	segments: number[][],
+	segments: Segment[],
 	coveredIndices: Set<number>
 ): { regions: Region[]; indexMap: number[] } {
 	const regions: Region[] = [];
@@ -464,8 +466,8 @@ export function buildCombinedModelRegions(
 				// End previous region
 				regions.push({
 					id: `model-combined-${regionIndex}`,
-					start: segments[currentStart][0],
-					end: segments[currentEnd][1],
+					start: segments[currentStart].start,
+					end: segments[currentEnd].end,
 					content: regionIndex.toString(),
 					color: currentIsCovered ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
 				});
@@ -487,8 +489,8 @@ export function buildCombinedModelRegions(
 	if (currentStart !== -1) {
 		regions.push({
 			id: `model-combined-${regionIndex}`,
-			start: segments[currentStart][0],
-			end: segments[currentEnd][1],
+			start: segments[currentStart].start,
+			end: segments[currentEnd].end,
 			content: regionIndex.toString(),
 			color: currentIsCovered ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
 		});

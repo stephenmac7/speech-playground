@@ -83,7 +83,7 @@ class ModelMetadata(ABC):
             )
         features = self.to_continuous_features(encoded)
         length = len(features)
-        return [[i * fd, (i + 1) * fd] for i in range(length)]
+        return [{"start": i * fd, "end": (i + 1) * fd, "content": None} for i in range(length)]
 
 
 HUBERT_KMEANS_PATH = os.getenv("HUBERT_KMEANS_PATH")
@@ -337,7 +337,8 @@ class PhonSegMetadata(ModelMetadata):
         return encoded["segment_features"].cpu().numpy()
 
     def get_segments(self, encoded):
-        return encoded["segments"].tolist()
+        pairs = encoded["segments"].tolist()
+        return [{"start": s, "end": e, "content": None} for s, e in pairs]
 
     @property
     def frame_duration(self) -> Optional[float]:
@@ -427,7 +428,8 @@ class SylberMetadata(ModelMetadata):
         return None
 
     def get_segments(self, encoded):
-        return encoded["segments"].tolist()
+        pairs = encoded["segments"].tolist()
+        return [{"start": s, "end": e, "content": None} for s, e in pairs]
 
     @property
     def has_fixed_frame_rate(self) -> bool:
@@ -499,7 +501,8 @@ class ZeroSylMetadata(ModelMetadata):
         return False
 
     def get_segments(self, encoded):
-        return encoded["segments"].tolist()
+        pairs = encoded["segments"].tolist()
+        return [{"start": s, "end": e, "content": None} for s, e in pairs]
 
     @property
     def cosine_alpha(self):

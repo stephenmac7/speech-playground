@@ -16,6 +16,8 @@ export type ModelsResponse = {
 	vc_models: Array<VoiceModelOption>;
 };
 
+export type Segment = { start: number; end: number; content: string | null };
+
 export type EncoderConfig = {
 	encoder: string;
 	discretize: boolean;

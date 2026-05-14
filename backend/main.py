@@ -242,7 +242,7 @@ def analyze_endpoint(
         tokenizer = DPDPTokenizer(cluster_centers=cluster_centers, gamma=gamma)
         _, xboundaries = tokenizer.tokenize_one(x_cont)
         segments = [
-            [xboundaries[i] * model.frame_duration, xboundaries[i + 1] * model.frame_duration]
+            {"start": xboundaries[i] * model.frame_duration, "end": xboundaries[i + 1] * model.frame_duration, "content": None}
             for i in range(len(xboundaries) - 1)
         ]
     else:
@@ -287,8 +287,8 @@ def compare_endpoint(
         aligned_times = []
         for y_idx, x_idx in path:
             if y_idx is not None and x_idx is not None:
-                aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
-                aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
+                aligned_times.append([y_segments[y_idx]["start"], x_segments[x_idx]["start"]])
+                aligned_times.append([y_segments[y_idx]["end"], x_segments[x_idx]["end"]])
     else:
         if alpha is None:
             alpha = model.euclidean_alpha if dist_method == "euclidean" else model.cosine_alpha
@@ -312,8 +312,8 @@ def compare_endpoint(
             aligned_times = []
             for y_idx, x_idx in path:
                 if y_idx is not None and x_idx is not None:
-                    aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
-                    aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
+                    aligned_times.append([y_segments[y_idx]["start"], x_segments[x_idx]["start"]])
+                    aligned_times.append([y_segments[y_idx]["end"], x_segments[x_idx]["end"]])
         else:
             # Use semiglobal_norm_query configuration: dtw(query, template, ...)
             # y is query (learner), x is template (model)
@@ -353,8 +353,8 @@ def compare_endpoint(
 
             aligned_times = []
             for i, j in zip(alignment.index1, alignment.index2):
-                aligned_times.append([y_segments[i][0], x_segments[j][0]])
-                aligned_times.append([y_segments[i][1], x_segments[j][1]])
+                aligned_times.append([y_segments[i]["start"], x_segments[j]["start"]])
+                aligned_times.append([y_segments[i]["end"], x_segments[j]["end"]])
 
     return {
         "scores": scores.tolist(),
@@ -391,19 +391,19 @@ def compare_dpdp_endpoint(
 
     # Convert boundaries to seconds
     y_segments = [
-        [yboundaries[i] * model.frame_duration, yboundaries[i + 1] * model.frame_duration]
+        {"start": yboundaries[i] * model.frame_duration, "end": yboundaries[i + 1] * model.frame_duration, "content": None}
         for i in range(len(yboundaries) - 1)
     ]
     x_segments = [
-        [xboundaries[i] * model.frame_duration, xboundaries[i + 1] * model.frame_duration]
+        {"start": xboundaries[i] * model.frame_duration, "end": xboundaries[i + 1] * model.frame_duration, "content": None}
         for i in range(len(xboundaries) - 1)
     ]
 
     aligned_times = []
     for y_idx, x_idx in path:
         if y_idx is not None and x_idx is not None:
-            aligned_times.append([y_segments[y_idx][0], x_segments[x_idx][0]])
-            aligned_times.append([y_segments[y_idx][1], x_segments[x_idx][1]])
+            aligned_times.append([y_segments[y_idx]["start"], x_segments[x_idx]["start"]])
+            aligned_times.append([y_segments[y_idx]["end"], x_segments[x_idx]["end"]])
 
     return {
         "scores": y_mismatches.tolist(),

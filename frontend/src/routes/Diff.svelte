@@ -14,7 +14,7 @@
 	import ArticulatoryFeatures from './ArticulatoryFeatures.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
 	import EncoderFieldset from '$lib/EncoderFieldset.svelte';
-	import type { ModelsResponse, EncoderConfig } from '$lib/types';
+	import type { ModelsResponse, EncoderConfig, Segment } from '$lib/types';
 
 	// ---------- Props ----------
 	let {
@@ -77,8 +77,8 @@
 	let articulatoryFeatures = $state<number[][] | undefined>();
 	let phonologicalActivations = $state<number[][][] | undefined>();
 	let phonologicalFeatureNames = $state<string[][] | undefined>();
-	let learnerSegments = $state<number[][] | undefined>();
-	let modelSegments = $state<number[][] | undefined>();
+	let learnerSegments = $state<Segment[] | undefined>();
+	let modelSegments = $state<Segment[] | undefined>();
 	let currentTime = $state(0);
 	const currentFrame = $derived(Math.floor(currentTime * 50));
 
@@ -112,8 +112,8 @@
 		return {
 			regions: modelSegments.map((segment, i) => ({
 				id: `model-segment-${i}`,
-				start: segment[0],
-				end: segment[1],
+				start: segment.start,
+				end: segment.end,
 				content: i.toString(),
 				color: coveredIndices.has(i) ? 'rgba(0, 0, 255, 0.2)' : 'rgba(255, 0, 0, 0.5)'
 			})),
@@ -268,8 +268,8 @@
 					phonologicalActivations?: number[][][];
 					phonologicalFeatureNames?: string[][];
 					alignedTimes?: number[][];
-					learnerSegments?: number[][];
-					modelSegments?: number[][];
+					learnerSegments?: Segment[];
+					modelSegments?: Segment[];
 				};
 				if (encoderConfig.discretize) {
 					formData.append('discretizer', encoderConfig.discretizer);
