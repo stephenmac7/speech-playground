@@ -132,7 +132,7 @@
 	const modelActivationTiersList = $derived.by<Tier[]>(() => {
 		if (!activationTiers) return [];
 		return activationTiers[0].flatMap((g) =>
-			buildActivationTiers(g.activations, g.featureNames, `${g.name}:`)
+			buildActivationTiers(g.activations, g.featureNames, `${g.name}:`, g.frameShift)
 		);
 	});
 
@@ -145,6 +145,7 @@
 			const modelActs = modelGroup.activations;
 			const learnerActs = learnerGroup.activations;
 			const names = learnerGroup.featureNames;
+			const frameShift = learnerGroup.frameShift ?? 0.02;
 			const prefix = `${learnerGroup.name}:`;
 			const map = alignmentMap;
 			const alignedModelActs: number[][] = new Array(learnerActs.length);
@@ -197,14 +198,14 @@
 					alignedModelActs,
 					f,
 					`${prefix}${name}`,
-					0.02,
+					frameShift,
 					vrange
 				);
 				const learnerTier = buildPhonologicalTier(
 					learnerActs,
 					f,
 					`${prefix}${name}`,
-					0.02,
+					frameShift,
 					vrange
 				);
 				const combined: Region[] = [];

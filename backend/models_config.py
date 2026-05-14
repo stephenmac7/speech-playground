@@ -303,7 +303,7 @@ class PhonologicalVectorMetadata(ModelMetadata):
     def extra_results(self, x):
         model = self.load()
         return {
-            "activationTiers": [{"name": "Phonological vectors", "featureNames": model.featnames, "activations": x.tolist()}],
+            "activationTiers": [{"name": "Phonological vectors", "featureNames": model.featnames, "activations": x.tolist(), "frameShift": self.frame_duration}],
         }
 
     @property

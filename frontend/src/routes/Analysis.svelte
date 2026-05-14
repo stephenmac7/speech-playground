@@ -35,7 +35,7 @@
 
 	const activationTiersList = $derived.by<Tier[]>(() =>
 		activationTiers.flatMap((g) =>
-			buildActivationTiers(g.activations, g.featureNames, `${g.name}:`)
+			buildActivationTiers(g.activations, g.featureNames, `${g.name}:`, g.frameShift)
 		)
 	);
 
