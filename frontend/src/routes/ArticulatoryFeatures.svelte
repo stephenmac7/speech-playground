@@ -12,7 +12,7 @@
 	} = $props();
 
 	let canvasEl: HTMLCanvasElement | undefined = $state();
-	let showLabels = $state(false);
+	let showLabels = $state(true);
 
 	// --- Constants ---
 	const POINT_LABELS = ['Tongue Body', 'Blade', 'Tip', 'Upper Lip', 'Lower Lip', 'Incisor'];
