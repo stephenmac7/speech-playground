@@ -74,7 +74,7 @@
 		if (!alignedTimes) return undefined;
 		return alignedTimes.map(([t1, t2]) => [t2, t1]).sort((a, b) => a[0] - b[0]);
 	});
-	let articulatoryFeatures = $state<number[][] | undefined>();
+	let articulatoryFeatures = $state<number[][][] | undefined>();
 	let activationTiers = $state<ActivationTierGroup[][] | undefined>();
 	let learnerSegments = $state<Segment[] | undefined>();
 	let modelSegments = $state<Segment[] | undefined>();
@@ -276,7 +276,7 @@
 				let data: {
 					scores: number[];
 					alignmentMap?: number[];
-					articulatoryFeatures?: number[][];
+					articulatoryFeatures?: number[][][];
 					activationTiers?: ActivationTierGroup[][];
 					alignedTimes?: number[][];
 					learnerSegments?: Segment[];
