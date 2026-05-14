@@ -18,6 +18,8 @@ export type ModelsResponse = {
 
 export type Segment = { start: number; end: number; content: string | null };
 
+export type ActivationTierGroup = { name: string; featureNames: string[]; activations: number[][] };
+
 export type EncoderConfig = {
 	encoder: string;
 	discretize: boolean;

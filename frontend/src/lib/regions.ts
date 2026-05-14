@@ -112,11 +112,11 @@ export function buildPhonologicalTier(
 	return { name: featName, regions };
 }
 
-export function buildPhonologicalTiers(
+export function buildActivationTiers(
 	activations: number[][],
 	featureNames: string[],
-	frameShift = 0.02,
-	namePrefix = 'phonological:'
+	namePrefix: string,
+	frameShift = 0.02
 ): Tier[] {
 	let vrange = 0;
 	for (let t = 0; t < activations.length; t++) {

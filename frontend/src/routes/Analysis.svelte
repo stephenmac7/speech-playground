@@ -4,8 +4,8 @@
 	import EncoderFieldset from '$lib/EncoderFieldset.svelte';
 	import { postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
-	import { buildNeutralSegmentRegions, buildPhonologicalTiers, type Tier } from '$lib/regions';
-	import type { ModelsResponse, EncoderConfig, Segment } from '$lib/types';
+	import { buildNeutralSegmentRegions, buildActivationTiers, type Tier } from '$lib/regions';
+	import type { ModelsResponse, EncoderConfig, Segment, ActivationTierGroup } from '$lib/types';
 
 	let {
 		tracks,
@@ -21,8 +21,7 @@
 
 	let learnerSegments = $state<Segment[] | undefined>();
 	let articulatoryFeatures = $state<number[][] | undefined>();
-	let phonologicalActivations = $state<number[][] | undefined>();
-	let phonologicalFeatureNames = $state<string[] | undefined>();
+	let activationTiers = $state<ActivationTierGroup[]>([]);
 	let currentTime = $state(0);
 	let loading = $state(false);
 
@@ -30,10 +29,14 @@
 
 	const regions = $derived(learnerSegments ? buildNeutralSegmentRegions(learnerSegments) : []);
 
-	const phonologicalTiers = $derived.by<Tier[]>(() =>
-		phonologicalActivations && phonologicalFeatureNames
-			? buildPhonologicalTiers(phonologicalActivations, phonologicalFeatureNames)
-			: []
+	const extraTierGroups = $derived(
+		activationTiers.map((g) => ({ prefix: `${g.name}:`, label: g.name }))
+	);
+
+	const activationTiersList = $derived.by<Tier[]>(() =>
+		activationTiers.flatMap((g) =>
+			buildActivationTiers(g.activations, g.featureNames, `${g.name}:`)
+		)
 	);
 
 	function textgridTiers(): Tier[] {
@@ -59,8 +62,7 @@
 			loading = true;
 			learnerSegments = undefined;
 			articulatoryFeatures = undefined;
-			phonologicalActivations = undefined;
-			phonologicalFeatureNames = undefined;
+			activationTiers = [];
 
 			const formData = new FormData();
 			formData.append('file', audio, 'recording.wav');
@@ -78,13 +80,11 @@
 				const data = await postJson<{
 					learnerSegments?: Segment[];
 					articulatoryFeatures?: number[][];
-					phonologicalActivations?: number[][];
-					phonologicalFeatureNames?: string[];
+					activationTiers?: ActivationTierGroup[];
 				}>(`/api/analyze`, formData, controller.signal);
 				learnerSegments = data.learnerSegments;
 				articulatoryFeatures = data.articulatoryFeatures;
-				phonologicalActivations = data.phonologicalActivations;
-				phonologicalFeatureNames = data.phonologicalFeatureNames;
+				activationTiers = data.activationTiers ?? [];
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name !== 'AbortError')
 					reportError('Error running analysis.', e);
@@ -101,8 +101,9 @@
 	<div class="viewer-card">
 		<SampleViewer
 			{audio}
-			tiers={[{ name: 'Segments', regions }, ...textgridTiers(), ...phonologicalTiers]}
+			tiers={[{ name: 'Segments', regions }, ...textgridTiers(), ...activationTiersList]}
 			transcript={tracks['Audio']?.transcript ?? undefined}
+			{extraTierGroups}
 			bind:currentTime
 		/>
 	</div>

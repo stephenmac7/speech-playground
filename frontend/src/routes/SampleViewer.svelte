@@ -8,7 +8,6 @@
 
 	const ALIGNMENT_TIER_PREFIX = 'alignment:';
 	const ALIGNMENT_COLOR = 'rgba(170, 220, 180, 0.6)';
-	const PHONOLOGICAL_TIER_PREFIX = 'phonological:';
 
 	type CompareWith = {
 		other: { play: (start?: number, end?: number) => void; seek: (time?: number) => void };
@@ -22,6 +21,7 @@
 		clickToPlay = false,
 		zoom = true,
 		compareWith = null,
+		extraTierGroups = [],
 		currentTime = $bindable(0)
 	}: {
 		audio?: Blob;
@@ -30,6 +30,7 @@
 		clickToPlay?: boolean;
 		zoom?: boolean;
 		compareWith?: CompareWith | null;
+		extraTierGroups?: { prefix: string; label: string }[];
 		currentTime?: number;
 	} = $props();
 
@@ -225,8 +226,8 @@
 		};
 	});
 
-	/* Phonological tiers — master toggle */
-	let phonologicalEnabled = $state(true);
+	/* Extra activation tier groups — master toggles */
+	let hiddenGroupPrefixes = $state(new Set<string>());
 
 	type TierGroup = {
 		prefix: string;
@@ -250,12 +251,17 @@
 			title: !transcript ? 'Track has no transcript' : undefined,
 			suffix: alignmentLoading ? ' (loading…)' : ''
 		},
-		{
-			prefix: PHONOLOGICAL_TIER_PREFIX,
-			masterLabel: 'Phonological vectors',
-			enabled: phonologicalEnabled,
-			toggle: (v: boolean) => (phonologicalEnabled = v)
-		}
+		...extraTierGroups.map((g) => ({
+			prefix: g.prefix,
+			masterLabel: g.label,
+			enabled: !hiddenGroupPrefixes.has(g.prefix),
+			toggle: (v: boolean) => {
+				const next = new Set(hiddenGroupPrefixes);
+				if (v) next.delete(g.prefix);
+				else next.add(g.prefix);
+				hiddenGroupPrefixes = next;
+			}
+		}))
 	]);
 
 	function groupForTier(name: string | undefined): TierGroup | undefined {
