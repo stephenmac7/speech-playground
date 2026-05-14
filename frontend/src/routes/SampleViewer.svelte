@@ -113,8 +113,7 @@
 		const minPxPerSec = waveformContainer.clientWidth / duration;
 		if (newPxPerSec < minPxPerSec) newPxPerSec = minPxPerSec;
 
-		// Limit max zoom to match wavesurfer default (container width)
-		const maxPxPerSec = waveformContainer.clientWidth;
+		const maxPxPerSec = waveformContainer.clientWidth * 4;
 		if (newPxPerSec > Math.max(maxPxPerSec, minPxPerSec))
 			newPxPerSec = Math.max(maxPxPerSec, minPxPerSec);
 
