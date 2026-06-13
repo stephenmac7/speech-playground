@@ -69,32 +69,40 @@ class WavLMEncoder:
         wav = resample(wav, sr, self.sample_rate)
         return wav.squeeze(0).to(self.device)
 
-    @torch.inference_mode()
-    def encode(self, waveforms: torch.Tensor) -> torch.Tensor:
-        # waveforms: (batch, samples)
-        assert waveforms.ndim == 2, "Input waveforms must be 2D (batch, samples)"
-
+    def _preprocess(self, waveforms: torch.Tensor) -> torch.Tensor:
         inputs = self.processor(
             [w.cpu().numpy() for w in waveforms],
             sampling_rate=16000,
             return_tensors="pt",
             padding=True,
         )
-        input_values = inputs.input_values.to(self.device)
+        return inputs.input_values.to(self.device)
 
-        outputs = self.model(
-            input_values,
-            output_hidden_states=(self.layer is not None),
-        )
+    @torch.inference_mode()
+    def encode(self, waveforms: torch.Tensor) -> torch.Tensor:
+        assert waveforms.ndim == 2, "Input waveforms must be 2D (batch, samples)"
+        input_values = self._preprocess(waveforms)
         if self.layer is not None:
-            # hidden_states[0] = CNN embeddings, hidden_states[i] = transformer layer i (1-indexed)
+            outputs = self.model(input_values, output_hidden_states=True)
             return outputs.hidden_states[self.layer]
+        outputs = self.model(input_values)
         return outputs.last_hidden_state
 
+    @torch.inference_mode()
+    def encode_all_layers(self, waveforms: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        assert waveforms.ndim == 2, "Input waveforms must be 2D (batch, samples)"
+        input_values = self._preprocess(waveforms)
+        outputs = self.model(input_values, output_hidden_states=True)
+        return outputs.hidden_states
+
     def encode_one(self, waveform: torch.Tensor) -> torch.Tensor:
-        # waveform: (samples,)
         assert waveform.ndim == 1, "Input waveform must be 1D (samples,)"
         return self.encode(waveform.unsqueeze(0)).squeeze(0)
+
+    def encode_one_all_layers(self, waveform: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        assert waveform.ndim == 1, "Input waveform must be 1D (samples,)"
+        hidden_states = self.encode_all_layers(waveform.unsqueeze(0))
+        return tuple(h.squeeze(0) for h in hidden_states)
 
     @property
     def sample_rate(self) -> int:
