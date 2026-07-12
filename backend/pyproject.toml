@@ -28,6 +28,7 @@ dpdp = ["numba"]
 sylber = ["sylber", "traitlets"]
 zerosyl = ["zerosyl>=1.0.5"]
 spidr = ["spidr"]
+spam = ["phonological-posteriogram"]
 inversion = [
     "loralib",
     "transformers",
@@ -39,6 +40,7 @@ torchaudio = { index = "pytorch-cu128" }
 torchcodec = { index = "pytorch-cu128" }
 kanade-tokenizer = { git = "https://github.com/frothywater/kanade-tokenizer" }
 speech-playground = { path = "../lib", editable = true }
+phonological-posteriogram = { git = "ssh://git@github.com/juice500ml/phonological-posteriogram" }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
+import importlib.util
 import os
 import json
 from typing import Optional
@@ -277,22 +278,22 @@ else:
     )
 
 
-PHONVEC_WEIGHTS_PATH = os.getenv("PHONVEC_WEIGHTS_PATH", "weights/phonological_vectors.npz")
-if not Path(PHONVEC_WEIGHTS_PATH).is_absolute():
-    PHONVEC_WEIGHTS_PATH = PARENT_DIR / PHONVEC_WEIGHTS_PATH
-else:
-    PHONVEC_WEIGHTS_PATH = Path(PHONVEC_WEIGHTS_PATH)
+PHONEMODEL_PATH = os.getenv("PHONEMODEL_PATH", "juice500/wavlm-24-phonemodel")
+
+
+@lru_cache()
+def get_spam_encoder():
+    from speech_playground.encoder.spam import SpamEncoder
+
+    return SpamEncoder(model_path=PHONEMODEL_PATH)
 
 
 class PhonologicalVectorMetadata(ModelMetadata):
     slug = "phonological-vector"
     name = "Phonological Vector"
 
-    @lru_cache()
     def load(self):
-        from speech_playground.encoder.phonological_vector import PhonologicalVectorEncoder
-
-        return PhonologicalVectorEncoder(weights_path=str(PHONVEC_WEIGHTS_PATH))
+        return get_spam_encoder()
 
     def discretizers(self):
         return []
@@ -320,17 +321,14 @@ class PhonSegMetadata(ModelMetadata):
     slug = "phonseg"
     name = "PhonSeg"
 
-    @lru_cache()
     def load(self):
-        from speech_playground.encoder.phonseg import PhonSegEncoder
-
-        return PhonSegEncoder(weights_path=str(PHONVEC_WEIGHTS_PATH))
+        return get_spam_encoder()
 
     def discretizers(self):
         return []
 
     def encode(self, waveform: torch.Tensor):
-        return self.load().encode_one(waveform)
+        return self.load().segment_one(waveform)
 
     def to_continuous_features(self, encoded):
         return encoded["segment_features"].cpu().numpy()
@@ -525,13 +523,13 @@ if INVERSION_TOP is not None:
 else:
     print("WARNING: Articulatory Inversion model files not found; skipping inversion encoder.")
 
-if Path(PHONVEC_WEIGHTS_PATH).exists():
+if importlib.util.find_spec("phonological_posteriogram") is not None:
     MODELS.append(PhonologicalVectorMetadata())
     MODELS.append(PhonSegMetadata())
 else:
     print(
-        f"WARNING: Phonological vector weights not found at {PHONVEC_WEIGHTS_PATH}; "
-        "skipping phonological-vector encoder."
+        "WARNING: phonological-posteriogram is not installed; "
+        "skipping SPAM encoders (install the 'spam' extra)."
     )
 
 try:
