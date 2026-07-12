@@ -7,7 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi[standard]>=0.119",
     "numpy>=2.3.4",
-    "tgt>=1.5",
+    "praatio>=6.2",
     "soundfile>=0.13.1",
     "torch",
     "torchaudio",

@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 import io
 import numpy as np
-import tgt
+from praatio.utilities import textgrid_io
 import soundfile
 import tempfile
 import torch
@@ -51,27 +51,30 @@ app = FastAPI(lifespan=lifespan)
 
 
 def parse_textgrid_to_json(textgrid_path: str) -> dict:
-    tg = tgt.io.read_textgrid(textgrid_path)
+    # Praat writes both UTF-16 and UTF-8 TextGrids; parse the raw dict rather
+    # than praatio's Textgrid classes, which reject e.g. float-noise overlaps.
+    try:
+        with open(textgrid_path, "r", encoding="utf-16") as fd:
+            data = fd.read()
+    except UnicodeError:
+        with open(textgrid_path, "r", encoding="utf-8") as fd:
+            data = fd.read()
+    tg = textgrid_io.parseTextgridStr(data, includeEmptyIntervals=False)
+
     response_data = {}
-    for tier in tg.tiers:
-        if not isinstance(tier, tgt.IntervalTier):
+    for tier in tg["tiers"]:
+        if tier["class"] != "IntervalTier":
             continue
 
-        intervals_data = []
-        for interval in tier.intervals:
-            text = interval.text
-            if not text:
-                continue
-
-            if interval.text:
-                intervals_data.append(
-                    {
-                        "start": round(interval.start_time, 4),
-                        "end": round(interval.end_time, 4),
-                        "content": text,
-                    }
-                )
-        response_data[tier.name] = intervals_data
+        response_data[tier["name"]] = [
+            {
+                "start": round(float(start), 4),
+                "end": round(float(end), 4),
+                "content": label,
+            }
+            for start, end, label in tier["entries"]
+            if label
+        ]
     return response_data
 
 
