@@ -31,8 +31,10 @@ from models_config import (
     MODELS,
     MODELS_MAP,
     KANADE_MODELS,
+    SPAM_AVAILABLE,
     get_kanade,
     get_kanade_vocoder,
+    get_spam_encoder,
 )
 
 # Base directory for /data endpoint
@@ -258,6 +260,33 @@ def analyze_endpoint(
         extra = model.extra_results(x)
 
     return {"learnerSegments": segments, **extra}
+
+
+@app.post("/spam")
+def spam_endpoint(file: UploadFile = File(...)):
+    """Phonological activation tiers for a track, independent of the encoder.
+
+    Like /align (forced alignment), this annotates a single track rather than
+    participating in alignment or distance computation.
+    """
+    if not SPAM_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="phonological-posteriogram is not installed on the backend.",
+        )
+    encoder = get_spam_encoder()
+    wav = AudioDecoder(file.file.read(), sample_rate=encoder.sample_rate).get_all_samples().data.mean(dim=0)
+    x = encoder.encode_one(wav)
+    return {
+        "activationTiers": [
+            {
+                "name": "Phonological vectors",
+                "featureNames": encoder.featnames,
+                "activations": x.tolist(),
+                "frameShift": encoder.frame_shift,
+            }
+        ],
+    }
 
 
 @app.post("/compare")

@@ -1,13 +1,15 @@
 <script lang="ts">
 	import WaveSurfer from 'wavesurfer.js';
 	import { onMount } from 'svelte';
-	import { visibleRegions } from '$lib/regions';
+	import { visibleRegions, buildActivationTiers } from '$lib/regions';
 	import type { Region, Tier } from '$lib/regions';
+	import type { ActivationTierGroup } from '$lib/types';
 	import { postJson } from '$lib/api';
 	import { reportError } from '$lib/errors';
 
 	const ALIGNMENT_TIER_PREFIX = 'alignment:';
 	const ALIGNMENT_COLOR = 'rgba(170, 220, 180, 0.6)';
+	const SPAM_TIER_PREFIX = 'phonological:';
 
 	type CompareWith = {
 		other: { play: (start?: number, end?: number) => void; seek: (time?: number) => void };
@@ -22,6 +24,7 @@
 		zoom = true,
 		compareWith = null,
 		extraTierGroups = [],
+		spamToggle = true,
 		currentTime = $bindable(0)
 	}: {
 		audio?: Blob;
@@ -31,6 +34,7 @@
 		zoom?: boolean;
 		compareWith?: CompareWith | null;
 		extraTierGroups?: { prefix: string; label: string }[];
+		spamToggle?: boolean;
 		currentTime?: number;
 	} = $props();
 
@@ -225,6 +229,55 @@
 		};
 	});
 
+	/* Phonological features (SPAM) — like forced alignment, annotates the
+	   track independently of the encoder used for alignment/distance. */
+	let spamEnabled = $state(false);
+	let spamTiers = $state<Tier[]>([]);
+	let spamLoading = $state(false);
+
+	type SpamResponse = { activationTiers?: ActivationTierGroup[] };
+
+	$effect(() => {
+		if (!spamEnabled) {
+			spamTiers = [];
+			spamLoading = false;
+			return;
+		}
+		if (!audio) return;
+
+		const controller = new AbortController();
+		let aborted = false;
+
+		(async () => {
+			spamLoading = true;
+			spamTiers = [];
+			const formData = new FormData();
+			formData.append('file', audio, 'recording.wav');
+			try {
+				const result = await postJson<SpamResponse>('/api/spam', formData, controller.signal);
+				if (aborted) return;
+				spamTiers = (result.activationTiers ?? []).flatMap((g) =>
+					buildActivationTiers(g.activations, g.featureNames, SPAM_TIER_PREFIX, g.frameShift)
+				);
+			} catch (e: unknown) {
+				if ((e as { name?: string })?.name !== 'AbortError') {
+					reportError('Error fetching phonological features.', e);
+					if (!aborted) {
+						spamTiers = [];
+						spamEnabled = false;
+					}
+				}
+			} finally {
+				if (!aborted) spamLoading = false;
+			}
+		})();
+
+		return () => {
+			aborted = true;
+			controller.abort();
+		};
+	});
+
 	/* Extra activation tier groups — master toggles */
 	let hiddenGroupPrefixes = $state(new Set<string>());
 
@@ -250,6 +303,18 @@
 			title: !transcript ? 'Track has no transcript' : undefined,
 			suffix: alignmentLoading ? ' (loading…)' : ''
 		},
+		...(spamToggle
+			? [
+					{
+						prefix: SPAM_TIER_PREFIX,
+						masterLabel: 'Phonological features',
+						alwaysShowMaster: true,
+						enabled: spamEnabled,
+						toggle: (v: boolean) => (spamEnabled = v),
+						suffix: spamLoading ? ' (loading…)' : ''
+					}
+				]
+			: []),
 		...extraTierGroups.map((g) => ({
 			prefix: g.prefix,
 			masterLabel: g.label,
@@ -273,7 +338,7 @@
 		return g ? name.slice(g.prefix.length) : name;
 	}
 
-	let allTiers = $derived([...tiers, ...alignmentTiers]);
+	let allTiers = $derived([...tiers, ...alignmentTiers, ...spamTiers]);
 	let tiersWithRegions = $derived(allTiers.filter((t) => t.regions.length > 0));
 	let textgridTiersWithRegions = $derived(
 		tiersWithRegions.filter((t) => !groupForTier(t.name))

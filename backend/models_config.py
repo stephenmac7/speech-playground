@@ -279,6 +279,7 @@ else:
 
 
 PHONEMODEL_PATH = os.getenv("PHONEMODEL_PATH", "juice500/wavlm-24-phonemodel")
+SPAM_AVAILABLE = importlib.util.find_spec("phonological_posteriogram") is not None
 
 
 @lru_cache()
@@ -286,35 +287,6 @@ def get_spam_encoder():
     from speech_playground.encoder.spam import SpamEncoder
 
     return SpamEncoder(model_path=PHONEMODEL_PATH)
-
-
-class PhonologicalVectorMetadata(ModelMetadata):
-    slug = "phonological-vector"
-    name = "Phonological Vector"
-
-    def load(self):
-        return get_spam_encoder()
-
-    def discretizers(self):
-        return []
-
-    def encode(self, waveform: torch.Tensor):
-        return self.load().encode_one(waveform)  # (T, F) np.ndarray
-
-    def extra_results(self, x):
-        model = self.load()
-        return {
-            "activationTiers": [{"name": "Phonological vectors", "featureNames": model.featnames, "activations": x.tolist(), "frameShift": self.frame_duration}],
-        }
-
-    @property
-    def has_fixed_frame_rate(self) -> bool:
-        return True
-
-    @property
-    def cosine_alpha(self):
-        """Alpha parameter for sharpening cosine distance."""
-        return 9.0
 
 
 class PhonSegMetadata(ModelMetadata):
@@ -523,13 +495,12 @@ if INVERSION_TOP is not None:
 else:
     print("WARNING: Articulatory Inversion model files not found; skipping inversion encoder.")
 
-if importlib.util.find_spec("phonological_posteriogram") is not None:
-    MODELS.append(PhonologicalVectorMetadata())
+if SPAM_AVAILABLE:
     MODELS.append(PhonSegMetadata())
 else:
     print(
         "WARNING: phonological-posteriogram is not installed; "
-        "skipping SPAM encoders (install the 'spam' extra)."
+        "skipping the PhonSeg encoder and /spam endpoint (install the 'spam' extra)."
     )
 
 try:

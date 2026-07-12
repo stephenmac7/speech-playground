@@ -75,7 +75,11 @@
 		return alignedTimes.map(([t1, t2]) => [t2, t1]).sort((a, b) => a[0] - b[0]);
 	});
 	let articulatoryFeatures = $state<number[][][] | undefined>();
-	let activationTiers = $state<ActivationTierGroup[][] | undefined>();
+	/* Phonological features (SPAM) for both lanes: [modelGroups, learnerGroups].
+	   Fetched per-track from /spam, independent of the comparison encoder. */
+	let spamEnabled = $state(false);
+	let spamLoading = $state(false);
+	let spamTierGroups = $state<ActivationTierGroup[][] | undefined>();
 	let learnerSegments = $state<Segment[] | undefined>();
 	let modelSegments = $state<Segment[] | undefined>();
 	let currentTime = $state(0);
@@ -124,47 +128,69 @@
 	const modelIndexMap = $derived(combinedModelData.indexMap);
 
 	const extraTierGroups = $derived(
-		activationTiers
-			? activationTiers[0].map((g) => ({ prefix: `${g.name}:`, label: g.name }))
+		spamTierGroups
+			? spamTierGroups[0].map((g) => ({ prefix: `${g.name}:`, label: g.name }))
 			: []
 	);
 
 	const modelActivationTiersList = $derived.by<Tier[]>(() => {
-		if (!activationTiers) return [];
-		return activationTiers[0].flatMap((g) =>
+		if (!spamTierGroups) return [];
+		return spamTierGroups[0].flatMap((g) =>
 			buildActivationTiers(g.activations, g.featureNames, `${g.name}:`, g.frameShift)
 		);
 	});
 
+	/* Map a learner SPAM frame to the aligned model SPAM frame by going
+	   through time: SPAM frames live in the SPAM encoder's frame space, while
+	   alignmentMap is in the comparison encoder's space, so we translate via
+	   the segment times of both tracks. */
 	const learnerActivationTiersList = $derived.by<Tier[]>(() => {
-		if (!activationTiers) return [];
+		if (!spamTierGroups) return [];
 		const allTiers: Tier[] = [];
-		for (let gi = 0; gi < activationTiers[0].length; gi++) {
-			const modelGroup = activationTiers[0][gi];
-			const learnerGroup = activationTiers[1][gi];
+		const lSegs = learnerSegments;
+		const mSegs = modelSegments;
+		for (let gi = 0; gi < spamTierGroups[0].length; gi++) {
+			const modelGroup = spamTierGroups[0][gi];
+			const learnerGroup = spamTierGroups[1][gi];
 			const modelActs = modelGroup.activations;
 			const learnerActs = learnerGroup.activations;
 			const names = learnerGroup.featureNames;
 			const frameShift = learnerGroup.frameShift ?? 0.02;
+			const modelFrameShift = modelGroup.frameShift ?? 0.02;
 			const prefix = `${learnerGroup.name}:`;
 			const map = alignmentMap;
 			const alignedModelActs: number[][] = new Array(learnerActs.length);
+			const isAligned: boolean[] = new Array(learnerActs.length).fill(false);
+			let seg = 0;
 			for (let t = 0; t < learnerActs.length; t++) {
 				const width = learnerActs[t].length;
-				const modelIdx = map?.[t];
-				if (modelIdx === undefined || modelIdx < 0 || modelIdx >= modelActs.length) {
-					alignedModelActs[t] = new Array(width).fill(0);
-				} else {
-					alignedModelActs[t] = modelActs[modelIdx];
+				let modelRow: number[] | undefined;
+				if (lSegs && mSegs && map) {
+					const tau = (t + 0.5) * frameShift;
+					while (seg < lSegs.length - 1 && lSegs[seg].end <= tau) seg++;
+					if (lSegs[seg].start <= tau && tau < lSegs[seg].end) {
+						const j = map[seg];
+						if (j !== undefined && j >= 0 && j < mSegs.length) {
+							const modelTime = (mSegs[j].start + mSegs[j].end) / 2;
+							const u = Math.min(
+								modelActs.length - 1,
+								Math.max(0, Math.floor(modelTime / modelFrameShift))
+							);
+							modelRow = modelActs[u];
+							isAligned[t] = true;
+						}
+					}
 				}
+				alignedModelActs[t] = modelRow ?? new Array(width).fill(0);
 			}
 
-			const speechIdx = names.indexOf('speech+');
+			const silenceIdx = names.indexOf('silence+');
 			const speechMask: boolean[] = new Array(learnerActs.length);
 			for (let t = 0; t < learnerActs.length; t++) {
 				speechMask[t] =
-					speechIdx >= 0
-						? learnerActs[t][speechIdx] > 0 || alignedModelActs[t][speechIdx] > 0
+					silenceIdx >= 0
+						? learnerActs[t][silenceIdx] <= 0 ||
+							(isAligned[t] && alignedModelActs[t][silenceIdx] <= 0)
 						: true;
 			}
 
@@ -172,7 +198,7 @@
 			const totalDiffs: number[] = new Array(names.length).fill(0);
 			for (let f = 0; f < names.length; f++) {
 				const n = names[f];
-				if (n.endsWith('-') || n === 'speech+') continue;
+				if (n.endsWith('-') || n === 'silence+') continue;
 				featureOrder.push(f);
 				let sum = 0;
 				for (let t = 0; t < learnerActs.length; t++) {
@@ -265,7 +291,6 @@
 			learnerSegments = undefined;
 			modelSegments = undefined;
 			articulatoryFeatures = undefined;
-			activationTiers = undefined;
 
 			const formData = new FormData();
 			formData.append('file', audioForComparison, 'recording.wav');
@@ -277,7 +302,6 @@
 					scores: number[];
 					alignmentMap?: number[];
 					articulatoryFeatures?: number[][][];
-					activationTiers?: ActivationTierGroup[][];
 					alignedTimes?: number[][];
 					learnerSegments?: Segment[];
 					modelSegments?: Segment[];
@@ -307,7 +331,6 @@
 				alignmentMap = data.alignmentMap;
 				alignedTimes = data.alignedTimes;
 				articulatoryFeatures = data.articulatoryFeatures;
-				activationTiers = data.activationTiers;
 				learnerSegments = data.learnerSegments;
 				modelSegments = data.modelSegments;
 			} catch (e: unknown) {
@@ -318,6 +341,53 @@
 		})();
 
 		return () => controller.abort();
+	});
+
+	// ---------- Effects: phonological features (SPAM) for both lanes ----------
+	$effect(() => {
+		if (!spamEnabled) {
+			spamTierGroups = undefined;
+			spamLoading = false;
+			return;
+		}
+		if (!audioForComparison || !modelForComparison) return;
+
+		const controller = new AbortController();
+		let aborted = false;
+
+		(async () => {
+			spamLoading = true;
+			spamTierGroups = undefined;
+			try {
+				const fetchSpam = (blob: Blob, name: string) => {
+					const fd = new FormData();
+					fd.append('file', blob, name);
+					return postJson<{ activationTiers?: ActivationTierGroup[] }>(
+						'/api/spam',
+						fd,
+						controller.signal
+					);
+				};
+				const [modelRes, learnerRes] = await Promise.all([
+					fetchSpam(modelForComparison, 'model.wav'),
+					fetchSpam(audioForComparison, 'recording.wav')
+				]);
+				if (aborted) return;
+				spamTierGroups = [modelRes.activationTiers ?? [], learnerRes.activationTiers ?? []];
+			} catch (e: unknown) {
+				if ((e as { name?: string })?.name !== 'AbortError') {
+					reportError('Error fetching phonological features.', e);
+					if (!aborted) spamEnabled = false;
+				}
+			} finally {
+				if (!aborted) spamLoading = false;
+			}
+		})();
+
+		return () => {
+			aborted = true;
+			controller.abort();
+		};
 	});
 
 	// ---------- Effects: voice conversion ----------
@@ -390,6 +460,7 @@
 			]}
 			transcript={tracks['Model']?.transcript ?? undefined}
 			{extraTierGroups}
+			spamToggle={false}
 			bind:this={modelViewer}
 			compareWith={learnerViewer
 				? {
@@ -410,6 +481,7 @@
 			]}
 			transcript={tracks['Query']?.transcript ?? undefined}
 			{extraTierGroups}
+			spamToggle={false}
 			compareWith={modelViewer
 				? {
 						other: modelViewer,
@@ -483,6 +555,10 @@
 			<label>
 				Show Score:
 				<input type="checkbox" bind:checked={showScore} />
+			</label>
+			<label>
+				Phonological Features:{spamLoading ? ' (loading…)' : ''}
+				<input type="checkbox" bind:checked={spamEnabled} />
 			</label>
 			{#if !encoderConfig.discretize}
 				<label>
