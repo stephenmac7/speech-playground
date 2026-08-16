@@ -1,6 +1,7 @@
 <script lang="ts">
 	import WaveSurfer from 'wavesurfer.js';
 	import { onMount } from 'svelte';
+	import { waveformHeight } from '$lib';
 	import { visibleRegions, buildActivationTiers } from '$lib/regions';
 	import type { Region, Tier } from '$lib/regions';
 	import type { ActivationTierGroup } from '$lib/types';
@@ -25,6 +26,7 @@
 		compareWith = null,
 		extraTierGroups = [],
 		spamToggle = true,
+		tierMenu = true,
 		currentTime = $bindable(0)
 	}: {
 		audio?: Blob;
@@ -35,6 +37,10 @@
 		compareWith?: CompareWith | null;
 		extraTierGroups?: { prefix: string; label: string }[];
 		spamToggle?: boolean;
+		/* Set false to drop the tier dropdown: tiers are then shown exactly as
+		   passed in, with no toggles for them or for the ones this component can
+		   fetch itself (forced alignment, SPAM). */
+		tierMenu?: boolean;
 		currentTime?: number;
 	} = $props();
 
@@ -54,7 +60,7 @@
 	let playOther = $state(false);
 
 	let innerHeight = $state(typeof window !== 'undefined' ? window.innerHeight : 1067);
-	let height = $derived(Math.round(Math.min(128, Math.max(64, innerHeight * 0.14))));
+	let height = $derived(waveformHeight(innerHeight));
 
 	let pxPerSec = $state(0);
 	let isFitToView = $state(true);
@@ -758,7 +764,7 @@
 			<div class="tier-labels">
 				{#each visibleTiers as tier, i (tier)}
 					<div class="tier-label-row">
-						{#if i === 0}
+						{#if tierMenu && i === 0}
 							<button
 								type="button"
 								class="tier-menu-toggle"

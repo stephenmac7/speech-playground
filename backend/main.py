@@ -37,8 +37,59 @@ from models_config import (
     get_spam_encoder,
 )
 
-# Base directory for /data endpoint
-DATA_ROOT = Path(os.getenv("DATA_ROOT"))
+# Base directories for the /data endpoints
+def _parse_data_roots() -> dict[str, Path]:
+    """Directories the /data endpoints may serve from, keyed by root name.
+
+    DATA_ROOTS is a comma-separated list of name=path entries, so that a client
+    path like "mine/file.wav" resolves to /home/mine/public_html/file.wav given
+    "mine=/home/mine/public_html".
+    """
+    roots: dict[str, Path] = {}
+
+    for entry in os.getenv("DATA_ROOTS", "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        name, sep, path = entry.partition("=")
+        name = name.strip()
+        if not sep or not name or "/" in name:
+            raise ValueError(
+                f"DATA_ROOTS entry '{entry}' should be of the form name=path, "
+                "with a name containing no '/'."
+            )
+        root = Path(path.strip())
+        if not root.is_absolute():
+            root = Path(__file__).parent / root
+        roots[name] = root
+
+    if not roots:
+        raise ValueError(
+            "DATA_ROOTS environment variable must be set. "
+            "Copy backend/.env.example to backend/.env."
+        )
+    return roots
+
+
+DATA_ROOTS = _parse_data_roots()
+
+
+def resolve_data_path(filename: str) -> Path:
+    """Map a client-supplied path onto a file under one of the data roots.
+
+    The first segment names the root, so every path looks like "<root>/<rest>".
+    """
+    name, sep, relative = filename.lstrip("/").partition("/")
+
+    root = DATA_ROOTS.get(name) if sep else None
+    if root is None:
+        raise HTTPException(status_code=404, detail=f"Unknown data root '{name}'.")
+
+    root = root.resolve()
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    return path
 
 
 @asynccontextmanager
@@ -119,13 +170,10 @@ def textgrid_endpoint(filename: str):
 
 @app.get("/data_tg/{filename:path}")
 def data_textgrid_endpoint(filename: str):
-    """Look up a .TextGrid file corresponding to a .wav filename under DATA_ROOT."""
+    """Look up a .TextGrid file corresponding to a .wav filename under a data root."""
     if not filename.endswith(".wav"):
         raise HTTPException(status_code=400, detail="Expected a .wav filename.")
-    tg_filename = filename[:-4] + ".TextGrid"
-    path = (DATA_ROOT / tg_filename).resolve()
-    if not str(path).startswith(str(DATA_ROOT.resolve())):
-        raise HTTPException(status_code=403, detail="Access denied.")
+    path = resolve_data_path(filename[:-4] + ".TextGrid")
     if not path.exists():
         raise HTTPException(status_code=404, detail="TextGrid file not found.")
     return parse_textgrid_to_json(str(path))
@@ -185,10 +233,7 @@ def process_audio_endpoint(file: UploadFile = File(...), apply_vad: bool = Form(
 def data_endpoint(filename: str):
     if not filename.endswith(".wav"):
         raise HTTPException(status_code=404, detail="Only .wav files are supported.")
-    parent = DATA_ROOT
-    path = (parent / filename).resolve()
-    if not str(path).startswith(str(parent.resolve())):
-        raise HTTPException(status_code=403, detail="Access denied.")
+    path = resolve_data_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found.")
     return streaming_response_of_audio_file(path, apply_vad=False)

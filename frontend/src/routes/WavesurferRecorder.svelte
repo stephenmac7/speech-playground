@@ -1,6 +1,7 @@
 <script lang="ts">
 	import WaveSurfer from 'wavesurfer.js';
 	import RecordPlugin from 'wavesurfer.js/dist/plugins/record.js';
+	import { waveformHeight } from '$lib';
 
 	let wavesurfer: WaveSurfer;
 	let record: RecordPlugin;
@@ -8,7 +9,7 @@
 	let actualStartTime: number | undefined = $state();
 	let resolveEndRecording: ((result: { blob: Blob; duration: number }) => void) | undefined;
 	let innerHeight = $state(typeof window !== 'undefined' ? window.innerHeight : 1067);
-	let height = $derived(Math.round(Math.min(128, Math.max(64, innerHeight * 0.12))));
+	let height = $derived(waveformHeight(innerHeight));
 
 	function waveform(node: HTMLDivElement) {
 		wavesurfer = WaveSurfer.create({
