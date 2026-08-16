@@ -756,7 +756,9 @@
 					</div>
 				{/each}
 				{#if duration}
-					<div class="playhead" style:left="{currentTime * pxPerSec}px"></div>
+					<!-- Rounded: a 1px line at a fractional offset can rasterize away
+					     entirely inside the rotateX(180deg) layer. -->
+					<div class="playhead" style:left="{Math.round(currentTime * pxPerSec)}px"></div>
 				{/if}
 			</div>
 		</div>
