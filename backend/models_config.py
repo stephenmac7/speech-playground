@@ -13,6 +13,10 @@ import torchaudio.functional as F
 # Load configuration via environment variables
 PARENT_DIR = Path(__file__).parent
 
+# Device for all encoders; defaults to CUDA when available. Set DEVICE=cpu to
+# check how the backend behaves on a machine without a GPU.
+DEVICE = os.getenv("DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
+
 KANADE_MODELS_PATH = Path(os.getenv("KANADE_MODELS_PATH"))
 if KANADE_MODELS_PATH is None:
     raise ValueError(
@@ -121,8 +125,8 @@ class HubertMetadata(ModelMetadata):
     slug = "hubert_l7"
     name = "HuBERT L7"
 
-    def __init__(self, *, device: Optional[torch.device] = "cuda"):
-        self.device = device
+    def __init__(self, *, device: Optional[torch.device] = None):
+        self.device = device or DEVICE
 
     @lru_cache()
     def load(self):
@@ -202,7 +206,7 @@ class WavLMMetadata(ModelMetadata):
     def _load(self, layer):
         from speech_playground.encoder.wavlm import WavLMEncoder
 
-        return WavLMEncoder(model_name=self.model_name, layer=layer)
+        return WavLMEncoder(model_name=self.model_name, layer=layer, device=DEVICE)
 
     def load_kmeans(self, name: str):
         return load_kmeans(Path(WAVLM_BASE_PLUS_KMEANS_PATH) / f"{name}.joblib")
@@ -246,7 +250,7 @@ def get_kanade(variant: str):
     from speech_playground.encoder.kanade import KanadeEncoder
 
     model = KANADE_VARIANTS[variant]
-    return KanadeEncoder(**model["source"])
+    return KanadeEncoder(device=DEVICE, **model["source"])
 
 
 INVERSION_TOP = os.getenv("INVERSION_TOP")
@@ -286,7 +290,7 @@ SPAM_AVAILABLE = importlib.util.find_spec("phonological_posteriogram") is not No
 def get_spam_encoder():
     from speech_playground.encoder.spam import SpamEncoder
 
-    return SpamEncoder(model_path=PHONEMODEL_PATH)
+    return SpamEncoder(model_path=PHONEMODEL_PATH, device=DEVICE)
 
 
 class PhonSegMetadata(ModelMetadata):
@@ -331,7 +335,10 @@ class InversionMetadata(ModelMetadata):
         from speech_playground.encoder.articulatory_inversion import ArticulatoryInversionEncoder
 
         return ArticulatoryInversionEncoder(
-            weights=INVERSION_WEIGHTS_PATH, mu_path=INVERSION_MU_PATH, std_path=INVERSION_STD_PATH
+            weights=INVERSION_WEIGHTS_PATH,
+            mu_path=INVERSION_MU_PATH,
+            std_path=INVERSION_STD_PATH,
+            device=DEVICE,
         )
 
     def discretizers(self):
@@ -368,7 +375,7 @@ class SpidRMetadata(ModelMetadata):
     def load(self):
         from speech_playground.encoder.spidr import SpidREncoder
 
-        return SpidREncoder(layer=5)
+        return SpidREncoder(layer=5, device=DEVICE)
 
     def discretizers(self):
         return []
@@ -421,7 +428,7 @@ class SylberV1Metadata(SylberMetadata):
     def load(self):
         from speech_playground.encoder.sylber import SylberEncoder
 
-        return SylberEncoder()
+        return SylberEncoder(device=DEVICE)
 
     def encode(self, waveform: torch.Tensor):
         # Sylber expects normalized audio
@@ -450,7 +457,7 @@ class ZeroSylMetadata(ModelMetadata):
     def load(self):
         from speech_playground.encoder.zerosyl import ZeroSylEncoder
 
-        return ZeroSylEncoder(checkpoint_path=self.checkpoint_path)
+        return ZeroSylEncoder(checkpoint_path=self.checkpoint_path, device=DEVICE)
 
     def discretizers(self):
         return []
