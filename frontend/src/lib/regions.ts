@@ -191,7 +191,6 @@ export function buildContinuousRegions(
 	}
 
 	const regions: Region[] = [];
-	let current: { start: number; scores: number[] } | undefined;
 
 	const createRegion = (startFrame: number, endFrame: number, scores: number[]) => {
 		const startTime = segments[startFrame].start;
@@ -249,33 +248,36 @@ export function buildContinuousRegions(
 		});
 	};
 
-	allScores.forEach((score, i) => {
-		const isInsertion = alignmentMap && alignmentMap[i] === -1;
-		if (score < trigger || isInsertion) {
-			if (!current) {
-				// Start of a new region, backtrack to find the real start
-				let j = i - 1;
-				while (j >= 0 && (allScores[j] < trigger || (alignmentMap && alignmentMap[j] === -1))) {
-					j--;
-				}
-				// The last "good" frame was j, so the "bad" region started at j + 1
-				current = { start: j + 1, scores: allScores.slice(j + 1, i) };
-			}
-			current.scores.push(score);
-		} else if (score < min) {
-			// Continue the region if it's below min but not below trigger
-			current?.scores.push(score);
-		} else if (current) {
-			// End of the current region (score is >= min)
-			createRegion(current.start, i, current.scores);
-			current = undefined;
+	/* Every frame belongs to a region, not just the bad ones. A good run comes
+	   out transparent on its own — its average sits above `min`, so the shade
+	   above clamps to zero — but it keeps the tier from emptying out when
+	   nothing is bad. The viewer drops a tier that has no regions, so without
+	   this "you matched all the way through" would render exactly like a
+	   comparison that failed to produce anything. */
+	const bad = allScores.map(
+		(score, i) => (alignmentMap && alignmentMap[i] === -1) || score < trigger
+	);
+
+	const eachRun = (fn: (start: number, end: number) => void) => {
+		for (let i = 0; i < bad.length; ) {
+			let j = i + 1;
+			while (j < bad.length && bad[j] === bad[i]) j++;
+			fn(i, j);
+			i = j;
 		}
+	};
+
+	/* A bad run too short to draw is folded back into the good material around
+	   it. createRegion discards it either way, but left in place it would cut
+	   the surrounding good stretch into two regions, and the viewer draws an
+	   edge down each region boundary — a line across the tier where nothing
+	   actually changed. */
+	eachRun((start, end) => {
+		if (bad[start] && segments[end - 1].end - segments[start].start < 0.1)
+			bad.fill(false, start, end);
 	});
 
-	// Handle a region that might be open at the end
-	if (current) {
-		createRegion(current.start, allScores.length, current.scores);
-	}
+	eachRun((start, end) => createRegion(start, end, allScores.slice(start, end)));
 
 	return regions;
 }

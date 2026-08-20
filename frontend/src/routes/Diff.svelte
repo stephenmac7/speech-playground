@@ -106,7 +106,8 @@
 		if (!modelSegments) return { regions: [] as Region[], indexMap: undefined };
 
 		const coveredIndices = new Set(alignmentMap?.filter((idx) => idx !== -1) ?? []);
-		const isStandardDiscrete = isFixedRateEncoder && encoderConfig.discretize && !encoderConfig.dpdp;
+		const isStandardDiscrete =
+			isFixedRateEncoder && encoderConfig.discretize && !encoderConfig.dpdp;
 
 		if (isStandardDiscrete && combineRegions) {
 			return buildCombinedModelRegions(modelSegments, coveredIndices);
@@ -128,9 +129,7 @@
 	const modelIndexMap = $derived(combinedModelData.indexMap);
 
 	const extraTierGroups = $derived(
-		spamTierGroups
-			? spamTierGroups[0].map((g) => ({ prefix: `${g.name}:`, label: g.name }))
-			: []
+		spamTierGroups ? spamTierGroups[0].map((g) => ({ prefix: `${g.name}:`, label: g.name })) : []
 	);
 
 	const modelActivationTiersList = $derived.by<Tier[]>(() => {

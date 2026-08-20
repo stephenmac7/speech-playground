@@ -392,16 +392,13 @@ def compare_endpoint(
                     aligned_times.append([y_segments[y_idx]["start"], x_segments[x_idx]["start"]])
                     aligned_times.append([y_segments[y_idx]["end"], x_segments[x_idx]["end"]])
         else:
-            # Use semiglobal_norm_query configuration: dtw(query, template, ...)
-            # y is query (learner), x is template (model)
+            # dtw(query, template, ...): y is query (learner), x is template (model)
             alignment = dtw.dtw(
                 y_feats,
                 x_feats,
                 dist_method=dist_method,
                 keep_internals=True,
-                open_begin=True,
-                open_end=True,
-                step_pattern="asymmetric",
+                step_pattern="symmetric2",
             )
             alignment_map = dtw.warp(alignment, index_reference=True)
             # dtw.warp returns garbage (large negative integers) when there are gaps.

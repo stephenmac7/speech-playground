@@ -17,6 +17,16 @@
 	const ENCODER = 'wavlm-base-plus';
 	const TEXTGRID_COLOR = 'rgba(160, 200, 255, 0.6)';
 
+	/* Tiers, most preferred first, from which the model's pauses are read, and
+	   the labels aligners give a non-speech interval. MFA leaves silence as an
+	   empty label, which the backend drops, so a pause is usually just a hole in
+	   the tier; hand-corrected grids in this data instead spell it out as "sp".
+	   "spn" (spoken noise) and "<unk>" are deliberately absent: they mark speech
+	   the aligner could not identify, and a distance needs only the sound, not
+	   the word, so those stretches are still the learner's to get right. */
+	const SPEECH_TIER_NAMES = ['words', 'word', 'phones', 'phone'];
+	const SILENCE_LABELS = new Set(['', 'sil', 'sp', 'pau', 'nsn', 'noise', '<sil>', '<p>']);
+
 	// ---------- Model (reference) track ----------
 	/* The practice file comes only from the link. Paths are resolved against the
 	   backend's data roots, as in the main app's "Server..." box. */
@@ -156,10 +166,12 @@
 
 	// ---------- Comparison ----------
 	let threshold = $state(0.6);
+	let ignoreSilence = $state(true);
 	let scores = $state<number[]>([]);
 	let alignmentMap = $state<number[] | undefined>();
 	let alignedTimes = $state<number[][] | undefined>();
 	let learnerSegments = $state<Segment[] | undefined>();
+	let modelSegments = $state<Segment[] | undefined>();
 	let comparing = $state(false);
 	let compareError = $state('');
 
@@ -179,6 +191,7 @@
 			alignmentMap = undefined;
 			alignedTimes = undefined;
 			learnerSegments = undefined;
+			modelSegments = undefined;
 			return;
 		}
 
@@ -191,6 +204,7 @@
 			alignmentMap = undefined;
 			alignedTimes = undefined;
 			learnerSegments = undefined;
+			modelSegments = undefined;
 
 			const formData = new FormData();
 			formData.append('file', learner, 'recording.wav');
@@ -203,12 +217,14 @@
 					alignmentMap?: number[];
 					alignedTimes?: number[][];
 					learnerSegments?: Segment[];
+					modelSegments?: Segment[];
 				}>('/api/compare', formData, controller.signal);
 				if (aborted) return;
 				scores = data.scores ?? [];
 				alignmentMap = data.alignmentMap;
 				alignedTimes = data.alignedTimes;
 				learnerSegments = data.learnerSegments;
+				modelSegments = data.modelSegments;
 			} catch (e: unknown) {
 				if ((e as { name?: string })?.name === 'AbortError') return;
 				console.error('Error comparing audio:', e);
@@ -224,13 +240,53 @@
 		};
 	});
 
+	/* The model's speech, as the annotation gives it; everything the tier leaves
+	   uncovered is a pause. Empty when there is no TextGrid to read, in which
+	   case nothing is masked and every frame is assessed as before. */
+	const modelSpeechIntervals = $derived.by<{ start: number; end: number }[]>(() => {
+		if (!modelTextgrid) return [];
+		const keys = Object.keys(modelTextgrid);
+		const key = SPEECH_TIER_NAMES.map((name) => keys.find((k) => k.toLowerCase() === name)).find(
+			(k) => k !== undefined
+		);
+		if (!key) return [];
+		return modelTextgrid[key]
+			.filter((iv) => iv.end > iv.start && !SILENCE_LABELS.has(iv.content.trim().toLowerCase()))
+			.map((iv) => ({ start: iv.start, end: iv.end }))
+			.sort((a, b) => a.start - b.start);
+	});
+
+	/* Silence carries no pronunciation to judge, so a learner frame aligned to a
+	   pause in the model is scored as a perfect match. */
+	const assessedScores = $derived.by<number[]>(() => {
+		const speech = modelSpeechIntervals;
+		const map = alignmentMap;
+		if (!ignoreSilence || speech.length === 0 || !map || !modelSegments || scores.length === 0)
+			return scores;
+
+		// A model frame is silent when it overlaps none of the speech intervals.
+		// Both are in ascending time, so one pass over each suffices.
+		const silent = new Array<boolean>(modelSegments.length);
+		let k = 0;
+		for (let j = 0; j < modelSegments.length; j++) {
+			const { start, end } = modelSegments[j];
+			while (k < speech.length && speech[k].end <= start) k++;
+			silent[j] = !(k < speech.length && speech[k].start < end);
+		}
+
+		return scores.map((score, i) => {
+			const j = map[i];
+			return j >= 0 && j < silent.length && silent[j] ? 1 : score;
+		});
+	});
+
 	/* Contiguous stretches of the learner's speech that are far from the model.
 	   Region labels (model frame indices) are dropped: they mean nothing to a
 	   learner and the colour already carries the message. */
 	const learnerRegions = $derived.by<Region[]>(() => {
-		if (!learnerSegments || scores.length === 0) return [];
+		if (!learnerSegments || assessedScores.length === 0) return [];
 		return buildContinuousRegions(
-			scores,
+			assessedScores,
 			learnerSegments,
 			threshold,
 			threshold - 0.05,
@@ -399,7 +455,12 @@
 			<input type="range" min="0.0" max="1.0" step="0.05" bind:value={threshold} />
 			<span class="threshold-value">{threshold.toFixed(2)}</span>
 		</label>
-		<p class="hint">Move right to mark more of your speech, left to mark only the worst parts.</p>
+		{#if modelSpeechIntervals.length > 0}
+			<label>
+				<input type="checkbox" bind:checked={ignoreSilence} />
+				Ignore pauses
+			</label>
+		{/if}
 	</section>
 </div>
 
