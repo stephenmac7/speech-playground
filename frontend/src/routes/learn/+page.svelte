@@ -167,6 +167,7 @@
 	// ---------- Comparison ----------
 	let threshold = $state(0.6);
 	let ignoreSilence = $state(true);
+	let combineRegions = $state(true);
 	let scores = $state<number[]>([]);
 	let alignmentMap = $state<number[] | undefined>();
 	let alignedTimes = $state<number[][] | undefined>();
@@ -290,7 +291,7 @@
 			learnerSegments,
 			threshold,
 			threshold - 0.05,
-			true,
+			combineRegions,
 			alignmentMap
 		).map((r) => ({ ...r, content: '' }));
 	});
@@ -455,12 +456,19 @@
 			<input type="range" min="0.0" max="1.0" step="0.05" bind:value={threshold} />
 			<span class="threshold-value">{threshold.toFixed(2)}</span>
 		</label>
-		{#if modelSpeechIntervals.length > 0}
+		<details>
+			<summary>Advanced</summary>
+			{#if modelSpeechIntervals.length > 0}
+				<label>
+					<input type="checkbox" bind:checked={ignoreSilence} />
+					Ignore pauses
+				</label>
+			{/if}
 			<label>
-				<input type="checkbox" bind:checked={ignoreSilence} />
-				Ignore pauses
+				<input type="checkbox" bind:checked={combineRegions} />
+				Combine regions
 			</label>
-		{/if}
+		</details>
 	</section>
 </div>
 
@@ -581,6 +589,19 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5em;
+	}
+
+	.settings details {
+		margin-top: 0.5rem;
+	}
+
+	.settings summary {
+		cursor: pointer;
+		opacity: 0.8;
+	}
+
+	.settings details label {
+		margin-top: 0.35rem;
 	}
 
 	.threshold-value {
