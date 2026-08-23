@@ -3,6 +3,7 @@
 	import AudioPreview from './AudioPreview.svelte';
 	import WavesurferRecorder from './WavesurferRecorder.svelte';
 	import { untrack } from 'svelte';
+	import type { Attachment } from 'svelte/attachments';
 	import { reportError } from '$lib/errors';
 	import { postJson } from '$lib/api';
 
@@ -22,6 +23,8 @@
 
 	let recorder: WavesurferRecorder | undefined = $state();
 	let selectedTrackRequestKey = $state<string | null>(null);
+	const selectors: Record<number, AudioSelector | null> = {};
+	let dragOverTrackId = $state<number | null>(null);
 
 	const colors = ['#ffff99', '#fb9a99', '#a6cee3', '#fdbf6f', '#cab2d6', '#b2df8a'];
 
@@ -179,6 +182,59 @@
 		}
 	}
 
+	function isFileDrag(e: DragEvent): boolean {
+		return !!e.dataTransfer?.types.includes('Files');
+	}
+
+	/** Makes an element a drop target for a single file, reporting hover state as it goes. */
+	function fileDropTarget(
+		onFile: (file: File) => void,
+		onHover: (hovered: boolean) => void
+	): Attachment<HTMLElement> {
+		return (el) => {
+			const dragover = (e: DragEvent) => {
+				if (!isFileDrag(e)) return;
+				e.preventDefault();
+				if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+				onHover(true);
+			};
+			const dragleave = (e: DragEvent) => {
+				// Ignore moves between children of the target
+				if (e.relatedTarget instanceof Node && el.contains(e.relatedTarget)) return;
+				onHover(false);
+			};
+			const drop = (e: DragEvent) => {
+				if (!isFileDrag(e)) return;
+				e.preventDefault();
+				onHover(false);
+				const file = e.dataTransfer?.files?.[0];
+				if (file) onFile(file);
+			};
+
+			el.addEventListener('dragover', dragover);
+			el.addEventListener('dragleave', dragleave);
+			el.addEventListener('drop', drop);
+			return () => {
+				el.removeEventListener('dragover', dragover);
+				el.removeEventListener('dragleave', dragleave);
+				el.removeEventListener('drop', drop);
+			};
+		};
+	}
+
+	function trackDropTarget(trackId: number) {
+		return fileDropTarget(
+			(file) => {
+				if (file.type && !file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+					reportError(`Cannot load "${file.name}": not an audio file.`);
+					return;
+				}
+				selectors[trackId]?.loadFile(file);
+			},
+			(hovered) => (dragOverTrackId = hovered ? trackId : null)
+		);
+	}
+
 	function downloadTrack(blob: Blob | undefined | null, filename: string) {
 		if (!blob) return;
 		const url = URL.createObjectURL(blob);
@@ -191,6 +247,15 @@
 		URL.revokeObjectURL(url);
 	}
 </script>
+
+<svelte:window
+	ondragover={(e) => {
+		if (isFileDrag(e)) e.preventDefault();
+	}}
+	ondrop={(e) => {
+		if (isFileDrag(e)) e.preventDefault();
+	}}
+/>
 
 <h3>Library</h3>
 
@@ -214,7 +279,9 @@
 		<fieldset
 			class="track"
 			class:selecting={selectedTrackRequestKey !== null}
+			class:drag-over={dragOverTrackId === track.id}
 			onclickcapture={(e) => assignTrack(e, track.id)}
+			{@attach trackDropTarget(track.id)}
 			style={track.keys?.filter((k) => requestedTracks.includes(k)).length
 				? `--selection-color: ${colorOfString(
 						track.keys?.filter((k) => requestedTracks.includes(k))[0]
@@ -281,6 +348,7 @@
 			</div>
 			<AudioPreview audio={track.data} />
 			<AudioSelector
+				bind:this={selectors[track.id]}
 				{recorder}
 				bind:value={() => track.data, (blob) => updateTrack(track.id, blob)}
 				bind:textgrid={
@@ -356,6 +424,14 @@
 	.track[style*='--selection-color'] {
 		outline: 2px solid var(--selection-color);
 		outline-offset: 2px;
+	}
+	.track.drag-over {
+		outline: 2px dashed var(--primary-color);
+		outline-offset: 2px;
+		background-color: color-mix(in srgb, var(--primary-color) 8%, var(--surface-color));
+	}
+	.track.drag-over > :global(*) {
+		pointer-events: none;
 	}
 	.track-assignments {
 		position: absolute;

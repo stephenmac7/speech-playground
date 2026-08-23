@@ -119,15 +119,19 @@
 		}
 	}
 
+	export function loadFile(file: File) {
+		if (isRecording) {
+			recorder.cancelRecording();
+			isRecording = false;
+		}
+		handleProcessAudio(file, false);
+	}
+
 	function handleFileSelect(e: Event) {
 		const target = e.target as HTMLInputElement;
 		const file = target.files?.[0];
 		if (file) {
-			if (isRecording) {
-				recorder.cancelRecording();
-				isRecording = false;
-			}
-			handleProcessAudio(file, false);
+			loadFile(file);
 		}
 		target.value = '';
 	}
