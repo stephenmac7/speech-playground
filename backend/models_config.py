@@ -282,7 +282,7 @@ else:
     )
 
 
-PHONEMODEL_PATH = os.getenv("PHONEMODEL_PATH", "juice500/wavlm-24-phonemodel")
+PHONEMODEL_REPO = "juice500/wavlm-24-phonemodel"
 SPAM_AVAILABLE = importlib.util.find_spec("phonological_posteriogram") is not None
 
 
@@ -290,7 +290,7 @@ SPAM_AVAILABLE = importlib.util.find_spec("phonological_posteriogram") is not No
 def get_spam_encoder():
     from speech_playground.encoder.spam import SpamEncoder
 
-    return SpamEncoder(model_path=PHONEMODEL_PATH, device=DEVICE)
+    return SpamEncoder(model_path=PHONEMODEL_REPO, device=DEVICE)
 
 
 class PhonSegMetadata(ModelMetadata):
