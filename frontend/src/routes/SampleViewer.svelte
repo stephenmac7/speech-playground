@@ -714,7 +714,7 @@
 
 <svelte:window on:keydown={handleKeydown} on:keyup={handleKeyup} on:blur={handleWindowBlur} bind:innerHeight />
 
-<div class="sample-viewer" style:--waveform-height="{height}px">
+<div class="sample-viewer" class:menu-open={tierMenuOpen} style:--waveform-height="{height}px">
 	<button class="play-button" bind:this={playButton} onclick={() => wavesurfer.playPause()}>
 		{#if playing}
 			<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"
@@ -726,139 +726,144 @@
 			>
 		{/if}
 	</button>
-	<div class="labels">
-		<span id="time">{format(currentTime)}</span>
+	<span id="time">{format(currentTime)}</span>
+	<div
+		class="waveform-container"
+		bind:this={waveformContainer}
+		bind:clientWidth={containerWidth}
+		onwheel={handleWheel}
+		onscroll={handleScroll}
+	>
 		<div
-			class="waveform-container"
-			bind:this={waveformContainer}
-			bind:clientWidth={containerWidth}
-			onwheel={handleWheel}
-			onscroll={handleScroll}
+			class="scroll-wrapper"
+			bind:this={scrollWrapper}
+			style:width={!isFitToView && zoom && duration && pxPerSec
+				? Math.ceil(duration * pxPerSec) + 'px'
+				: '100%'}
 		>
-			<div
-				class="scroll-wrapper"
-				bind:this={scrollWrapper}
-				style:width={!isFitToView && zoom && duration && pxPerSec
-					? Math.ceil(duration * pxPerSec) + 'px'
-					: '100%'}
-			>
-				<div id="wavesurfer" bind:this={node}></div>
-				{#each visibleTiers as tier, i (tier)}
-					<div class="regions-bar" style:width="{duration * pxPerSec}px">
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<canvas
-							bind:this={canvasRefs[i]}
-							class="regions-canvas"
-							style:width="{containerWidth}px"
-							style:height="24px"
-							onmousedown={(e) => handleRegionBarMouseDown(e, tier.regions)}
-						></canvas>
-					</div>
-				{/each}
-				{#if duration}
-					<!-- Rounded: a 1px line at a fractional offset can rasterize away
-					     entirely inside the rotateX(180deg) layer. -->
-					<div class="playhead" style:left="{Math.round(currentTime * pxPerSec)}px"></div>
-				{/if}
-			</div>
+			<div id="wavesurfer" bind:this={node}></div>
+			{#each visibleTiers as tier, i (tier)}
+				<div class="regions-bar" style:width="{duration * pxPerSec}px">
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<canvas
+						bind:this={canvasRefs[i]}
+						class="regions-canvas"
+						style:width="{containerWidth}px"
+						style:height="24px"
+						onmousedown={(e) => handleRegionBarMouseDown(e, tier.regions)}
+					></canvas>
+				</div>
+			{/each}
+			{#if duration}
+				<!-- Rounded: a 1px line at a fractional offset can rasterize away
+				     entirely inside the rotateX(180deg) layer. -->
+				<div class="playhead" style:left="{Math.round(currentTime * pxPerSec)}px"></div>
+			{/if}
 		</div>
-		{#if tiersWithRegions.length > 0 || transcript !== undefined}
-			<div class="tier-labels">
-				{#each visibleTiers as tier, i (tier)}
-					<div class="tier-label-row">
-						{#if tierMenu && i === 0}
-							<button
-								type="button"
-								class="tier-menu-toggle"
-								aria-label="Toggle tiers"
-								aria-expanded={tierMenuOpen}
-								onclick={() => (tierMenuOpen = !tierMenuOpen)}
-							>
-								<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
-									<path d="M4 6l4 4 4-4z" />
-								</svg>
-					{#if tierMenuOpen}
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-						class="tier-menu-backdrop"
-						onclick={(e) => {
-							e.stopPropagation();
-							closeTierMenu();
-						}}
-					></div>
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div class="tier-menu" onclick={(e) => e.stopPropagation()}>
-							{#each textgridTiersWithRegions as tier}
-								{@const isVisible = !hiddenTierNames.has(tier.name!)}
-								{@const isLastVisible = isVisible && visibleTiers.length === 1}
-								<label class="tier-menu-item" class:disabled={isLastVisible}>
-									<input
-										type="checkbox"
-										checked={isVisible}
-										disabled={isLastVisible}
-										onchange={() => toggleTier(tier.name!)}
-									/>
-									{tier.name}
-								</label>
-							{/each}
-							{#each tierGroups as group}
-								{@const members = groupTiers(group.prefix)}
-								{#if group.alwaysShowMaster || members.length > 0}
-									<div class="tier-menu-separator"></div>
-									<label
-										class="tier-menu-item"
-										class:disabled={group.disabled}
-										title={group.title}
-									>
+	</div>
+	{#if tiersWithRegions.length > 0 || transcript !== undefined}
+		<div class="tier-labels">
+			{#each visibleTiers as tier, i (tier)}
+				<div class="tier-label-row">
+					{#if tierMenu && i === 0}
+						<button
+							type="button"
+							class="tier-menu-toggle"
+							aria-label="Toggle tiers"
+							aria-expanded={tierMenuOpen}
+							onclick={() => (tierMenuOpen = !tierMenuOpen)}
+						>
+							<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
+								<path d="M4 6l4 4 4-4z" />
+							</svg>
+						</button>
+						{#if tierMenuOpen}
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="tier-menu-backdrop"
+								onclick={(e) => {
+									e.stopPropagation();
+									closeTierMenu();
+								}}
+							></div>
+							<div class="tier-menu">
+								{#each textgridTiersWithRegions as tier}
+									{@const isVisible = !hiddenTierNames.has(tier.name!)}
+									{@const isLastVisible = isVisible && visibleTiers.length === 1}
+									<label class="tier-menu-item" class:disabled={isLastVisible}>
 										<input
 											type="checkbox"
-											checked={group.enabled}
-											disabled={group.disabled}
-											onchange={(e) =>
-												group.toggle((e.currentTarget as HTMLInputElement).checked)}
+											checked={isVisible}
+											disabled={isLastVisible}
+											onchange={() => toggleTier(tier.name!)}
 										/>
-										{group.masterLabel}{group.suffix ?? ''}
+										{tier.name}
 									</label>
-									{#if group.enabled}
-										{#each members as tier}
-											{@const isVisible = !hiddenTierNames.has(tier.name!)}
-											{@const isLastVisible = isVisible && visibleTiers.length === 1}
-											<label class="tier-menu-item sub" class:disabled={isLastVisible}>
-												<input
-													type="checkbox"
-													checked={isVisible}
-													disabled={isLastVisible}
-													onchange={() => toggleTier(tier.name!)}
-												/>
-												{stripTierPrefix(tier.name!)}
-											</label>
-										{/each}
+								{/each}
+								{#each tierGroups as group}
+									{@const members = groupTiers(group.prefix)}
+									{#if group.alwaysShowMaster || members.length > 0}
+										<div class="tier-menu-separator"></div>
+										<label
+											class="tier-menu-item"
+											class:disabled={group.disabled}
+											title={group.title}
+										>
+											<input
+												type="checkbox"
+												checked={group.enabled}
+												disabled={group.disabled}
+												onchange={(e) =>
+													group.toggle((e.currentTarget as HTMLInputElement).checked)}
+											/>
+											{group.masterLabel}{group.suffix ?? ''}
+										</label>
+										{#if group.enabled}
+											{#each members as tier}
+												{@const isVisible = !hiddenTierNames.has(tier.name!)}
+												{@const isLastVisible = isVisible && visibleTiers.length === 1}
+												<label class="tier-menu-item sub" class:disabled={isLastVisible}>
+													<input
+														type="checkbox"
+														checked={isVisible}
+														disabled={isLastVisible}
+														onchange={() => toggleTier(tier.name!)}
+													/>
+													{stripTierPrefix(tier.name!)}
+												</label>
+											{/each}
+										{/if}
 									{/if}
-								{/if}
-							{/each}
-						</div>
-					{/if}
-							</button>
+								{/each}
+							</div>
 						{/if}
-						<span class="tier-label-name" title={tier.name}
-							>{stripTierPrefix(tier.name ?? '')}</span
-						>
-					</div>
-				{/each}
-			</div>
-		{/if}
-		<span id="duration">{duration ? format(duration) : '--:--'}</span>
-	</div>
+					{/if}
+					<span class="tier-label-name" title={tier.name}
+						>{stripTierPrefix(tier.name ?? '')}</span
+					>
+				</div>
+			{/each}
+		</div>
+	{/if}
+	<span id="duration">{duration ? format(duration) : '--:--'}</span>
 </div>
 
 <style>
 	.sample-viewer {
 		display: flex;
 		align-items: start;
-		gap: 1em;
+		gap: 0.5em;
 		position: relative;
+	}
+	.sample-viewer.menu-open {
+		/* .tier-labels' z-index makes it a stacking context, so .tier-menu's
+		   z-index is only resolved among its siblings inside that context. Two
+		   viewers stacked on a page therefore order by their .tier-labels alone
+		   (equal z-index, so DOM order wins) and the lower viewer's labels paint
+		   over an open menu from the upper one. Lift the whole viewer instead,
+		   which also lets .tier-menu-backdrop cover what's below it. */
+		z-index: 20;
 	}
 
 	button {
@@ -875,25 +880,21 @@
 		padding: 0;
 		flex-shrink: 0;
 		margin-top: calc((var(--waveform-height) - 3em) / 2);
+		/* With .sample-viewer's gap this keeps the old 1em spacing to the time label */
+		margin-right: 0.5em;
 	}
 
-	.labels {
-		display: flex;
-		justify-content: space-between;
-		align-items: start;
-		gap: 0.5em;
-		flex-grow: 1;
-		position: relative;
-	}
-	.labels > span {
+	#time,
+	#duration {
 		width: 3em;
+		flex-shrink: 0;
 		/* Center vertically against the waveform height */
 		height: var(--waveform-height);
 		display: flex;
 		align-items: center;
 	}
-	.labels > span#duration {
-		text-align: right;
+	#duration {
+		justify-content: flex-end;
 	}
 
 	.waveform-container {
@@ -942,11 +943,14 @@
 	.tier-labels {
 		/* Stack of per-tier labels sitting in the left gutter, aligned with the
 		   rows of .regions-bar on the right. The first row also hosts the menu
-		   toggle (dropdown arrow) to the left of the label name. */
+		   toggle (dropdown arrow) to the left of the label name. The gutter spans
+		   everything left of the waveform, the play button's column included --
+		   the button sits above these rows -- i.e. 3em button + 0.5em margin +
+		   0.5em gap + 3em time + 0.5em gap. */
 		position: absolute;
 		left: 0;
 		top: var(--waveform-height);
-		width: calc(3em + 0.5em);
+		width: 7.5em;
 		display: flex;
 		flex-direction: column;
 		z-index: 10;
@@ -959,11 +963,12 @@
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 4px;
 		padding-right: 6px;
+		/* anchors the overlaid menu toggle and the popup below it */
+		position: relative;
 	}
 	.tier-label-name {
-		font-size: 11px;
+		font-size: 12px;
 		line-height: 1;
 		white-space: nowrap;
 		overflow: hidden;
@@ -976,8 +981,14 @@
 	.tier-menu-toggle:hover {
 		cursor: pointer;
 		line-height: 0;
-		position: relative;
-		background: none;
+		/* Out of flow, in the space left of the right-aligned label, so every
+		   row gets the same width for its name. The background keeps the arrow
+		   readable if a long name reaches this far and slides under it. */
+		position: absolute;
+		left: 0;
+		top: 50%;
+		transform: translateY(-50%);
+		background: var(--background-color);
 		border: none;
 		border-radius: 0;
 		padding: 0;
